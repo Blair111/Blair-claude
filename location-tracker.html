@@ -112,7 +112,7 @@ function startTracking() {
     document.getElementById("stopBtn").disabled = false;
     info.innerHTML = "Getting location...";
 
-    watchId = navigator.geolocation.watchPosition(
+    watchId = navigator.geolocation.getCurrentPosition
         updatePosition,
         showError,
         {
