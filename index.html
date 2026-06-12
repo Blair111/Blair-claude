@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>Location Tracker Map</title>
+<title>Route Navigation Engine</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -12,7 +12,6 @@
 html, body {
 height: 100%;
 margin: 0;
-padding: 0;
 font-family: Arial;
 background: #0f172a;
 color: white;
@@ -49,7 +48,7 @@ margin-left: 10px;
 <body>
 
 <div id="topbar">
-<button onclick="startTracking()">Track My Location</button>
+<span>Click 2 places to route</span>
 <span id="info">Ready</span>
 </div>
 
@@ -61,166 +60,79 @@ margin-left: 10px;
 
 let map = L.map('map').setView([55.9533, -3.1883], 13);
 
-// Base map
+// OpenStreetMap tiles
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 attribution: '© OpenStreetMap'
 }).addTo(map);
 
-// Data
-let savedPlaces = JSON.parse(localStorage.getItem("savedPlaces") || "[]");
+let clickPoints = [];
+let routeLayer = null;
 let markers = [];
-let routeLines = [];
 
-// 🔵 Your live location marker
-let userMarker = null;
+// =========================
+// CLICK MAP TO SELECT ROUTE
+// =========================
+map.on("click", async function(e) {
 
-// ============================
-// SAVE / LOAD
-// ============================
-function savePlaces() {
-localStorage.setItem("savedPlaces", JSON.stringify(savedPlaces));
-}
-
-// ============================
-// RENDER SAVED PLACES
-// ============================
-function renderPlaces() {
-
-// clear old markers
-markers.forEach(m => map.removeLayer(m));
-markers = [];
-
-// clear old lines
-routeLines.forEach(l => map.removeLayer(l));
-routeLines = [];
-
-savedPlaces.forEach(place => {
-
-const marker = L.marker([place.lat, place.lng])
-.addTo(map)
-.bindPopup(place.name);
-
+const marker = L.marker([e.latlng.lat, e.latlng.lng]).addTo(map);
 markers.push(marker);
 
+clickPoints.push([e.latlng.lng, e.latlng.lat]); // OSRM uses lng,lat order
+
+if (clickPoints.length === 2) {
+await getRoute(clickPoints[0], clickPoints[1]);
+clickPoints = [];
+}
 });
 
-// draw distances between ALL saved places
-for (let i = 0; i < savedPlaces.length; i++) {
-for (let j = i + 1; j < savedPlaces.length; j++) {
-drawLine(savedPlaces[i], savedPlaces[j]);
-}
-}
+// =========================
+// OSRM ROUTING (REAL ROADS)
+// =========================
+async function getRoute(start, end) {
 
-}
+const url =
+`https://router.project-osrm.org/route/v1/driving/` +
+`${start[0]},${start[1]};${end[0]},${end[1]}` +
+`?overview=full&geometries=geojson`;
 
-// ============================
-// DRAW LINE + DISTANCE LABEL
-// ============================
-function drawLine(a, b) {
+try {
 
-const distance = getDistance(a.lat, a.lng, b.lat, b.lng);
+const res = await fetch(url);
+const data = await res.json();
 
-const line = L.polyline(
-[[a.lat, a.lng], [b.lat, b.lng]],
-{
-color: "#3b82f6",
-weight: 3,
-dashArray: "6,6"
-}
-).addTo(map);
-
-line.bindTooltip(
-`${a.name} ↔ ${b.name}<br>${(distance / 1000).toFixed(2)} km`,
-{ permanent: false }
-);
-
-routeLines.push(line);
-}
-
-// ============================
-// DISTANCE CALCULATION
-// ============================
-function getDistance(lat1, lon1, lat2, lon2) {
-
-const R = 6371e3;
-
-const φ1 = lat1 * Math.PI / 180;
-const φ2 = lat2 * Math.PI / 180;
-
-const Δφ = (lat2 - lat1) * Math.PI / 180;
-const Δλ = (lon2 - lon1) * Math.PI / 180;
-
-const a =
-Math.sin(Δφ / 2) ** 2 +
-Math.cos(φ1) *
-Math.cos(φ2) *
-Math.sin(Δλ / 2) ** 2;
-
-const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-return R * c;
-}
-
-// ============================
-// LIVE LOCATION TRACKING
-// ============================
-function startTracking() {
-
-if (!navigator.geolocation) {
-alert("Geolocation not supported");
+if (!data.routes || !data.routes.length) {
+document.getElementById("info").innerText = "No route found";
 return;
 }
 
-navigator.geolocation.watchPosition(pos => {
+const route = data.routes[0];
 
-const lat = pos.coords.latitude;
-const lng = pos.coords.longitude;
+// remove old route
+if (routeLayer) map.removeLayer(routeLayer);
 
-// first time: create marker
-if (!userMarker) {
-userMarker = L.circleMarker([lat, lng], {
-radius: 10,
-color: "#22c55e",
-fillColor: "#22c55e",
-fillOpacity: 1
-}).addTo(map).bindPopup("You are here");
+// draw BLUE route
+routeLayer = L.geoJSON(route.geometry, {
+style: {
+color: "blue",
+weight: 5
 }
+}).addTo(map);
 
-// update position
-userMarker.setLatLng([lat, lng]);
+// fit map
+map.fitBounds(routeLayer.getBounds());
 
-map.setView([lat, lng], 15);
+// show info
+const distance = route.distance / 1000;
+const duration = route.duration / 60;
 
 document.getElementById("info").innerText =
-"Live tracking active";
+`Distance: ${distance.toFixed(2)} km | Time: ${duration.toFixed(1)} min`;
 
-}, err => {
-alert("Location permission denied or unavailable");
-});
-
+} catch (err) {
+document.getElementById("info").innerText = "Routing error";
+console.error(err);
 }
-
-// ============================
-// ADD PLACE BY CLICKING MAP
-// ============================
-map.on("click", function (e) {
-
-const name = prompt("Name this place");
-if (!name) return;
-
-savedPlaces.push({
-name,
-lat: e.latlng.lat,
-lng: e.latlng.lng
-});
-
-savePlaces();
-renderPlaces();
-
-});
-
-// init
-renderPlaces();
+}
 
 </script>
 
