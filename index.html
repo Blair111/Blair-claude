@@ -118,8 +118,49 @@ function findPlaces() {
 
         try {
 
-            const res = await fetch(url);
-            const data = await res.json();
+          const res = await fetch(url);
+
+const text = await res.text();
+
+try {
+    const data = JSON.parse(text);
+
+    if (!data.elements) {
+        throw new Error("No elements returned");
+    }
+
+    placesData = data.elements.map(el => {
+
+        const name = el.tags?.name || "Unknown place";
+
+        const distance = getDistance(
+            userLat, userLng,
+            el.lat, el.lon
+        );
+
+        return {
+            name,
+            lat: el.lat,
+            lng: el.lon,
+            distance
+        };
+    });
+
+    placesData.sort((a, b) => a.distance - b.distance);
+
+    renderList();
+    renderMarkers();
+
+    document.getElementById("info").innerText =
+        `Found ${placesData.length} places`;
+
+} catch (e) {
+    console.error("Raw response:", text);
+    console.error(e);
+
+    document.getElementById("info").innerText =
+        "API error (check console)";
+}
 
             placesData = data.elements.map(el => {
 
