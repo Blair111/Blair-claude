@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Location Tracker</title>
+
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    margin: 20px;
+}
+
+h1 {
+    margin-bottom: 10px;
+}
+
+.controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+button {
+    padding: 12px 20px;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+#stopBtn {
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+}
+
+#startBtn {
+    background-color: #2ecc71;
+    color: white;
+    border: none;
+    border-radius: 4px;
+}
+
+#info {
+    margin: 15px;
+    font-size: 18px;
+    line-height: 1.6;
+}
+
+#map {
+    height: 500px;
+    width: 100%;
+    border-radius: 10px;
+}
+
+#history {
+    margin-top: 15px;
+    font-size: 14px;
+    color: #555;
+}
+</style>
+</head>
+
+<body>
+
+<h1>Live Location Tracker</h1>
+
+<div class="controls">
+    <button id="startBtn" onclick="startTracking()">Start Tracking</button>
+    <button id="stopBtn" onclick="stopTracking()" disabled>Stop Tracking</button>
+</div>
+
+<div id="info">
+    Press the button to get your location.
+</div>
+
+<div id="map"></div>
+
+<div id="history"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+let map;
+let marker;
+let watchId;
+let polyline;
+let locationHistory = [];
+let lastPosition = null;
+
+function startTracking() {
+    const info = document.getElementById("info");
+
+    if (!navigator.geolocation) {
+        info.innerHTML = "Geolocation is not supported by your browser.";
+        return;
+    }
+
+    document.getElementById("startBtn").disabled = true;
+    document.getElementById("stopBtn").disabled = false;
+    info.innerHTML = "Getting location...";
+
+    watchId = navigator.geolocation.watchPosition(
+        updatePosition,
+        showError,
+        {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        }
+    );
+}
+
+function stopTracking() {
+    if (watchId !== undefined) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = undefined;
+    }
+
+    document.getElementById("startBtn").disabled = false;
+    document.getElementById("stopBtn").disabled = true;
+    document.getElementById("info").innerHTML += "<br><em>Tracking stopped.</em>";
+}
+
+function updatePosition(position) {
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+    const accuracy = Math.round(position.coords.accuracy);
+    const speed = position.coords.speed;
+    const heading = position.coords.heading;
+    const timestamp = new Date(position.timestamp).toLocaleTimeString();
+
+    let extraInfo = "";
+    if (speed !== null && speed !== undefined) {
+        extraInfo += `<br><strong>Speed:</strong> ${(speed * 3.6).toFixed(1)} km/h`;
+    }
+    if (heading !== null && heading !== undefined) {
+        extraInfo += `<br><strong>Heading:</strong> ${Math.round(heading)}&deg; (${bearingToCompass(heading)})`;
+    }
+
+    document.getElementById("info").innerHTML = `
+        <strong>Latitude:</strong> ${lat.toFixed(6)}<br>
+        <strong>Longitude:</strong> ${lng.toFixed(6)}<br>
+        <strong>Accuracy:</strong> ${accuracy} metres
+        ${extraInfo}<br>
+        <strong>Updated:</strong> ${timestamp}
+    `;
+
+    locationHistory.push([lat, lng]);
+    updateHistoryDisplay();
+
+    if (!map) {
+        map = L.map('map').setView([lat, lng], 16);
+
+        L.tileLayer(
+            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            {
+                attribution: '&copy; OpenStreetMap contributors'
+            }
+        ).addTo(map);
+
+        marker = L.marker([lat, lng])
+            .addTo(map)
+            .bindPopup("You are here")
+            .openPopup();
+
+        polyline = L.polyline(locationHistory, { color: '#3498db', weight: 4 }).addTo(map);
+
+    } else {
+        map.setView([lat, lng]);
+        marker.setLatLng([lat, lng]);
+        polyline.setLatLngs(locationHistory);
+    }
+
+    lastPosition = { lat, lng };
+}
+
+function updateHistoryDisplay() {
+    const count = locationHistory.length;
+    if (count > 1) {
+        document.getElementById("history").innerHTML =
+            `${count} location points recorded &mdash; trail shown in blue`;
+    }
+}
+
+function bearingToCompass(degrees) {
+    const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+    return dirs[Math.round(degrees / 45) % 8];
+}
+
+function showError(error) {
+    let message;
+
+    switch (error.code) {
+        case error.PERMISSION_DENIED:
+            message = "Location permission denied.";
+            break;
+        case error.POSITION_UNAVAILABLE:
+            message = "Location unavailable.";
+            break;
+        case error.TIMEOUT:
+            message = "Location request timed out.";
+            break;
+        default:
+            message = "Unknown error.";
+    }
+
+    document.getElementById("info").innerHTML = message;
+    stopTracking();
+}
+</script>
+
+</body>
+</html>
