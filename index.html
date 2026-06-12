@@ -6,42 +6,44 @@
 
 <title>My Map</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<!-- More reliable Leaflet CDN -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-
-body{
-margin:0;
-font-family:Arial;
-background:#0f172a;
-color:white;
+html, body {
+height: 100%;
+margin: 0;
+padding: 0;
+font-family: Arial;
+background: #0f172a;
+color: white;
 }
 
-#topbar{
-background:#111827;
-padding:10px;
-display:flex;
-gap:10px;
-align-items:center;
+#topbar {
+background: #111827;
+padding: 10px;
+display: flex;
+gap: 10px;
+align-items: center;
 }
 
-button{
-padding:10px;
-border:none;
-border-radius:8px;
-background:#2563eb;
-color:white;
-cursor:pointer;
+button {
+padding: 10px;
+border: none;
+border-radius: 8px;
+background: #2563eb;
+color: white;
+cursor: pointer;
 }
 
-#info{
-margin-left:10px;
+#info {
+margin-left: 10px;
 }
 
-#map{
-height:90vh;
+#map {
+height: calc(100vh - 50px);
+width: 100%;
 }
-
 </style>
 </head>
 
@@ -54,169 +56,129 @@ height:90vh;
 
 <div id="map"></div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
+let map = L.map('map').setView([55.9533, -3.1883], 13);
 
-let map = L.map('map').setView([55.9533,-3.1883],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+attribution: '© OpenStreetMap'
+}).addTo(map);
 
-L.tileLayer(
-'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-{
-attribution:'© OpenStreetMap'
-}
-).addTo(map);
-
-let savedPlaces =
-JSON.parse(localStorage.getItem("savedPlaces") || "[]");
+let savedPlaces = JSON.parse(localStorage.getItem("savedPlaces") || "[]");
 
 let markers = [];
 let selectedPlaces = [];
 let routeLine = null;
 
-function savePlaces(){
-localStorage.setItem(
-"savedPlaces",
-JSON.stringify(savedPlaces)
-);
+function savePlaces() {
+localStorage.setItem("savedPlaces", JSON.stringify(savedPlaces));
 }
 
-function renderPlaces(){
+function renderPlaces() {
+markers.forEach(m => map.removeLayer(m));
+markers = [];
 
-markers.forEach(m=>map.removeLayer(m));
-markers=[];
-
-savedPlaces.forEach(place=>{
-
-const marker =
-L.marker([place.lat,place.lng])
+savedPlaces.forEach(place => {
+const marker = L.marker([place.lat, place.lng])
 .addTo(map)
 .bindPopup(place.name);
 
-marker.on("click",()=>{
-
+marker.on("click", () => {
 selectedPlaces.push(place);
 
-if(selectedPlaces.length===2){
-
-drawRoute(
-selectedPlaces[0],
-selectedPlaces[1]
-);
-
-selectedPlaces=[];
+if (selectedPlaces.length === 2) {
+drawRoute(selectedPlaces[0], selectedPlaces[1]);
+selectedPlaces = [];
 }
-
 });
 
 markers.push(marker);
-
 });
-
 }
 
-function drawRoute(a,b){
-
-if(routeLine){
+function drawRoute(a, b) {
+if (routeLine) {
 map.removeLayer(routeLine);
 }
 
 routeLine = L.polyline(
 [
-[a.lat,a.lng],
-[b.lat,b.lng]
+[a.lat, a.lng],
+[b.lat, b.lng]
 ],
 {
-color:"blue",
-weight:5
+color: "blue",
+weight: 5
 }
 ).addTo(map);
 
-const distance =
-getDistance(
-a.lat,
-a.lng,
-b.lat,
-b.lng
-);
+const distance = getDistance(a.lat, a.lng, b.lat, b.lng);
 
 document.getElementById("info").innerText =
-(a.name + " → " + b.name +
-" | " +
-(distance/1000).toFixed(2) +
-" km");
+`${a.name} → ${b.name} | ${(distance / 1000).toFixed(2)} km`;
 
 map.fitBounds(routeLine.getBounds());
-
 }
 
-function getDistance(lat1,lon1,lat2,lon2){
-
+function getDistance(lat1, lon1, lat2, lon2) {
 const R = 6371e3;
 
-const φ1 = lat1*Math.PI/180;
-const φ2 = lat2*Math.PI/180;
+const φ1 = lat1 * Math.PI / 180;
+const φ2 = lat2 * Math.PI / 180;
 
-const Δφ=(lat2-lat1)*Math.PI/180;
-const Δλ=(lon2-lon1)*Math.PI/180;
+const Δφ = (lat2 - lat1) * Math.PI / 180;
+const Δλ = (lon2 - lon1) * Math.PI / 180;
 
-const a=
-Math.sin(Δφ/2)**2+
-Math.cos(φ1)*
-Math.cos(φ2)*
-Math.sin(Δλ/2)**2;
+const a =
+Math.sin(Δφ / 2) ** 2 +
+Math.cos(φ1) *
+Math.cos(φ2) *
+Math.sin(Δλ / 2) ** 2;
 
-const c=
-2*Math.atan2(
-Math.sqrt(a),
-Math.sqrt(1-a)
-);
+const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-return R*c;
-
+return R * c;
 }
 
-function getLocation(){
+function getLocation() {
+if (!navigator.geolocation) {
+document.getElementById("info").innerText = "Geolocation not supported";
+return;
+}
 
-navigator.geolocation.getCurrentPosition(pos=>{
+navigator.geolocation.getCurrentPosition(pos => {
+const lat = pos.coords.latitude;
+const lng = pos.coords.longitude;
 
-const lat=pos.coords.latitude;
-const lng=pos.coords.longitude;
+map.setView([lat, lng], 15);
 
-map.setView([lat,lng],15);
-
-L.marker([lat,lng])
+L.marker([lat, lng])
 .addTo(map)
 .bindPopup("You are here")
 .openPopup();
 
-document.getElementById("info").innerText =
-"Location found";
-
+document.getElementById("info").innerText = "Location found";
+}, err => {
+document.getElementById("info").innerText = "Location permission denied";
 });
-
 }
 
-map.on("click",function(e){
-
-const name =
-prompt("Name this place");
-
-if(!name) return;
+map.on("click", function (e) {
+const name = prompt("Name this place");
+if (!name) return;
 
 savedPlaces.push({
-name:name,
-lat:e.latlng.lat,
-lng:e.latlng.lng
+name: name,
+lat: e.latlng.lat,
+lng: e.latlng.lng
 });
 
 savePlaces();
 renderPlaces();
-
 });
 
 renderPlaces();
-
 </script>
 
 </body>
