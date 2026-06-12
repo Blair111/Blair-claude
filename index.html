@@ -3,9 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Live Location Map</title>
+<title>Nearby Places Map</title>
 
-<!-- Leaflet map library -->
 <link
   rel="stylesheet"
   href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -16,52 +15,51 @@ body {
     font-family: Arial, sans-serif;
     text-align: center;
     margin: 0;
-    padding: 20px;
+    padding: 15px;
 }
 
 h1 {
-    margin: 15px 0;
+    margin: 10px 0;
 }
 
 button {
-    padding: 12px 20px;
-    font-size: 16px;
+    padding: 12px 18px;
+    margin: 8px;
     cursor: pointer;
-    margin-bottom: 15px;
-}
-
-#info {
-    margin: 10px 0 20px 0;
-    font-size: 16px;
 }
 
 #map {
     height: 500px;
     width: 100%;
     border-radius: 10px;
+    margin-top: 10px;
+}
+
+#info {
+    margin: 10px;
 }
 </style>
 </head>
 
 <body>
 
-<h1>My Live Location Map</h1>
+<h1>Nearby Places Finder</h1>
 
-<button onclick="startTracking()">Show My Location</button>
+<button onclick="findNearby()">Find Nearby Places</button>
 
-<div id="info">Click the button to load your map</div>
+<div id="info">Click to load nearby places around you</div>
 
 <div id="map"></div>
 
-<!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
 let map;
-let marker;
+let userMarker;
+let placeMarkers = [];
 
-function startTracking() {
+function findNearby() {
 
     const info = document.getElementById("info");
 
@@ -70,46 +68,86 @@ function startTracking() {
         return;
     }
 
-    info.innerHTML = "Getting location...";
+    info.innerHTML = "Getting your location...";
 
-    navigator.geolocation.getCurrentPosition(
-        function(position) {
+    navigator.geolocation.getCurrentPosition(async function(position) {
 
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
 
-            info.innerHTML = `
-                Latitude: ${lat}<br>
-                Longitude: ${lng}
-            `;
+        info.innerHTML = "Loading nearby places...";
 
-            // Create map (only once)
-            if (!map) {
-                map = L.map('map').setView([lat, lng], 16);
+        // Create map once
+        if (!map) {
+            map = L.map('map').setView([lat, lng], 16);
 
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '&copy; OpenStreetMap contributors'
-                }).addTo(map);
-
-                marker = L.marker([lat, lng]).addTo(map)
-                    .bindPopup("You are here")
-                    .openPopup();
-            } else {
-                map.setView([lat, lng], 16);
-                marker.setLatLng([lat, lng]);
-            }
-        },
-
-        function(error) {
-            info.innerHTML = "Error: " + error.message;
-        },
-
-        {
-            enableHighAccuracy: false,
-            timeout: 30000,
-            maximumAge: 60000
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
         }
-    );
+
+        // Clear old markers
+        placeMarkers.forEach(m => map.removeLayer(m));
+        placeMarkers = [];
+
+        if (userMarker) {
+            map.removeLayer(userMarker);
+        }
+
+        userMarker = L.marker([lat, lng])
+            .addTo(map)
+            .bindPopup("You are here")
+            .openPopup();
+
+        map.setView([lat, lng], 16);
+
+        // Overpass API query (cafes, restaurants, shops)
+        const query = `
+            [out:json];
+            (
+              node["amenity"~"cafe|restaurant|fast_food"](around:1000,${lat},${lng});
+              node["shop"](around:1000,${lat},${lng});
+            );
+            out;
+        `;
+
+        const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (!data.elements.length) {
+                info.innerHTML = "No places found nearby.";
+                return;
+            }
+
+            data.elements.forEach(place => {
+
+                const name = place.tags.name || "Unnamed place";
+
+                const marker = L.marker([place.lat, place.lon])
+                    .addTo(map)
+                    .bindPopup(name);
+
+                placeMarkers.push(marker);
+            });
+
+            info.innerHTML = `Found ${data.elements.length} places nearby (1km radius)`;
+
+        } catch (error) {
+            info.innerHTML = "Error loading nearby places.";
+        }
+
+    },
+    function(error) {
+        info.innerHTML = "Location error: " + error.message;
+    },
+    {
+        enableHighAccuracy: false,
+        timeout: 20000
+    });
+
 }
 
 </script>
