@@ -126,10 +126,14 @@ function findNearby() {
 
                 const name = place.tags.name || "Unnamed place";
 
-                const marker = L.marker([place.lat, place.lon])
-                    .addTo(map)
-                    .bindPopup(name);
-
+                const marker = const marker = L.marker([place.lat, place.lon])
+    .addTo(map)
+    .bindPopup(`
+        <b>${name}</b><br>
+        <button onclick="openDirections(${place.lat}, ${place.lon})">
+            Get Directions
+        </button>
+    `);
                 placeMarkers.push(marker);
             });
 
@@ -154,3 +158,20 @@ function findNearby() {
 
 </body>
 </html>
+function openDirections(lat, lng) {
+
+    // Get your current location again
+    navigator.geolocation.getCurrentPosition(function(position) {
+
+        const userLat = position.coords.latitude;
+        const userLng = position.coords.longitude;
+
+        const url =
+            `https://www.google.com/maps/dir/?api=1` +
+            `&origin=${userLat},${userLng}` +
+            `&destination=${lat},${lng}`;
+
+        window.open(url, "_blank");
+
+    });
+}
