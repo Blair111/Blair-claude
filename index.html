@@ -14,14 +14,16 @@ body {
     height: 100vh;
 }
 
-/* Top bar */
+/* TOP BAR */
 #topbar {
-    padding: 10px;
-    text-align: center;
+    padding: 12px;
     border-bottom: 1px solid #ddd;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
-/* Main layout */
+/* MAIN LAYOUT */
 #container {
     display: flex;
     height: calc(100vh - 60px);
@@ -102,7 +104,6 @@ function findPlaces() {
             }).addTo(map);
         }
 
-        // reset markers
         if (userMarker) map.removeLayer(userMarker);
         markers.forEach(m => map.removeLayer(m));
         markers = [];
@@ -146,7 +147,6 @@ function findPlaces() {
                 };
             });
 
-            // sort by distance
             placesData.sort((a, b) => a.distance - b.distance);
 
             renderList();
@@ -156,7 +156,6 @@ function findPlaces() {
                 `Found ${placesData.length} places`;
 
         } catch (e) {
-            console.log(e);
             document.getElementById("info").innerText =
                 "Error loading nearby places";
         }
@@ -209,7 +208,6 @@ function renderMarkers() {
     });
 }
 
-// distance calculation
 function getDistance(lat1, lon1, lat2, lon2) {
 
     const R = 6371e3;
