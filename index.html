@@ -8,18 +8,40 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
+<style>
+
 body {
     margin: 0;
-    font-family: Arial;
+    font-family: Arial, sans-serif;
+    background: #0f172a;
+    color: white;
     height: 100vh;
 }
 
 #topbar {
     padding: 12px;
-    border-bottom: 1px solid #ddd;
     display: flex;
     align-items: center;
     gap: 10px;
+    background: #111827;
+    border-bottom: 1px solid #334155;
+}
+
+button {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 10px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #1d4ed8;
+}
+
+#info {
+    color: #cbd5e1;
 }
 
 #container {
@@ -27,58 +49,59 @@ body {
     height: calc(100vh - 60px);
 }
 
-/* LEFT PANEL */
 #list {
     width: 35%;
     overflow-y: auto;
-    border-right: 1px solid #ddd;
-    background: #fafafa;
+    border-right: 1px solid #334155;
+    background: #111827;
 }
 
-/* MAP */
 #map {
     width: 65%;
 }
 
-/* PLACE CARD */
 .place {
     padding: 12px;
-    border-bottom: 1px solid #eee;
+    margin: 8px;
+    border-radius: 10px;
+    background: #1e293b;
     cursor: pointer;
-    background: white;
+    transition: 0.2s;
 }
 
 .place:hover {
-    background: #f0f0f0;
+    background: #334155;
 }
 
 .name {
     font-weight: bold;
+    color: white;
 }
 
 .distance {
     font-size: 12px;
-    color: gray;
+    color: #94a3b8;
 }
 
-/* SAVED PLACE CARD */
 .saved-title {
-    padding: 10px;
-    background: #e8f0ff;
+    padding: 12px;
+    background: #0f172a;
+    color: #fbbf24;
     font-weight: bold;
-    border-bottom: 1px solid #ccc;
 }
 
 .saved-item {
-    padding: 10px;
-    background: #fff3cd;
-    border-bottom: 1px solid #ddd;
+    padding: 12px;
+    margin: 8px;
+    border-radius: 10px;
+    background: #78350f;
     cursor: pointer;
 }
 
 .saved-item:hover {
-    background: #ffe69c;
+    background: #92400e;
 }
+
 </style>
 </head>
 
@@ -86,6 +109,8 @@ body {
 
 <div id="topbar">
     <button onclick="findPlaces()">Find Nearby Places</button>
+    <button onclick="startRouteMode()">Create Route</button>
+    <button onclick="clearRoute()">Clear Route</button>
     <span id="info">Click to load</span>
 </div>
 
@@ -106,6 +131,10 @@ let placesData = [];
 
 // ✅ SAVED PLACES (persistent)
 let savedPlaces = JSON.parse(localStorage.getItem("savedPlaces") || "[]");
+
+let routeMode = false;
+let firstPlace = null;
+let routeLine = null;
 
 // =========================
 // LOAD NEARBY PLACES
@@ -227,10 +256,27 @@ function renderList() {
             <div class="distance">${p.distance.toFixed(0)}m away</div>
         `;
 
-        div.onclick = () => {
-            map.setView([p.lat, p.lng], 17);
-            markers[i].openPopup();
-        };
+      div.onclick = () => {
+
+    map.setView([p.lat, p.lng], 17);
+
+    if (routeMode) {
+
+        if (!firstPlace) {
+
+            firstPlace = p;
+
+            document.getElementById("info").innerText =
+                "Select destination place";
+
+        } else {
+
+            drawRoute(firstPlace, p);
+
+            routeMode = false;
+        }
+    }
+};
 
         list.appendChild(div);
     });
@@ -328,6 +374,68 @@ function getDistance(lat1, lon1, lat2, lon2) {
     return R * c;
 }
 
+function getDistance(lat1, lon1, lat2, lon2) {
+
+    ...
+    
+    return R * c;
+}
+
+
+function startRouteMode() {
+
+    routeMode = true;
+    firstPlace = null;
+
+    document.getElementById("info").innerText =
+        "Select starting place";
+}
+
+function clearRoute() {
+
+    if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
+    }
+
+    document.getElementById("info").innerText =
+        "Route cleared";
+}
+
+function drawRoute(placeA, placeB) {
+
+    if (routeLine) {
+        map.removeLayer(routeLine);
+    }
+
+    routeLine = L.polyline([
+        [placeA.lat, placeA.lng],
+        [placeB.lat, placeB.lng]
+    ], {
+        color: "#3b82f6",
+        weight: 5
+    }).addTo(map);
+
+    map.fitBounds(routeLine.getBounds());
+
+    const distance = getDistance(
+        placeA.lat,
+        placeA.lng,
+        placeB.lat,
+        placeB.lng
+    );
+
+    const walkMinutes =
+        Math.round((distance / 1000) / 5 * 60);
+
+    document.getElementById("info").innerText =
+        `${(distance / 1000).toFixed(2)} km | 🚶 ${walkMinutes} mins`;
+}
+
+</script>
+
+</body>
+</html>
 </script>
 
 </body>
