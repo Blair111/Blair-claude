@@ -80,15 +80,12 @@ function findPlaces() {
         map.setView([lat, lng], 16);
 
 const query = `
-[out:json];
+[out:json][timeout:25];
 (
-  node["amenity"](around:8000,${lat},${lng});
+  node["amenity"~"cafe|restaurant|fast_food"](around:8000,${lat},${lng});
   node["shop"](around:8000,${lat},${lng});
-  way["amenity"](around:8000,${lat},${lng});
-  way["shop"](around:8000,${lat},${lng});
-  relation["amenity"](around:8000,${lat},${lng});
 );
-out center;
+out body;
 `;
 
         const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
