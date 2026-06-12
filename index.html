@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>My Map</title>
+<title>Location Tracker Map</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -40,10 +40,8 @@ height: calc(100vh - 50px);
 width: 100%;
 }
 
-#error {
-padding: 10px;
-color: red;
-display: none;
+#info {
+margin-left: 10px;
 }
 </style>
 </head>
@@ -51,100 +49,99 @@ display: none;
 <body>
 
 <div id="topbar">
-<button onclick="getLocation()">Find Me</button>
-<span id="info">Loading map...</span>
+<button onclick="startTracking()">Track My Location</button>
+<span id="info">Ready</span>
 </div>
 
-<div id="error"></div>
 <div id="map"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-let map;
-let savedPlaces = JSON.parse(localStorage.getItem("savedPlaces") || "[]");
-let markers = [];
-let selectedPlaces = [];
-let routeLine = null;
 
-function showError(msg) {
-const err = document.getElementById("error");
-err.style.display = "block";
-err.innerText = msg;
-}
+let map = L.map('map').setView([55.9533, -3.1883], 13);
 
-function initMap() {
-if (typeof L === "undefined") {
-showError("Leaflet failed to load (CDN blocked or offline).");
-return;
-}
-
-map = L.map('map').setView([55.9533, -3.1883], 13);
-
+// Base map
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 attribution: '© OpenStreetMap'
 }).addTo(map);
 
-document.getElementById("info").innerText = "Map ready";
+// Data
+let savedPlaces = JSON.parse(localStorage.getItem("savedPlaces") || "[]");
+let markers = [];
+let routeLines = [];
 
-map.on("click", function (e) {
-const name = prompt("Name this place");
-if (!name) return;
+// 🔵 Your live location marker
+let userMarker = null;
 
-savedPlaces.push({
-name,
-lat: e.latlng.lat,
-lng: e.latlng.lng
-});
-
+// ============================
+// SAVE / LOAD
+// ============================
+function savePlaces() {
 localStorage.setItem("savedPlaces", JSON.stringify(savedPlaces));
-renderPlaces();
-});
-
-renderPlaces();
 }
 
+// ============================
+// RENDER SAVED PLACES
+// ============================
 function renderPlaces() {
-if (!map) return;
 
+// clear old markers
 markers.forEach(m => map.removeLayer(m));
 markers = [];
 
+// clear old lines
+routeLines.forEach(l => map.removeLayer(l));
+routeLines = [];
+
 savedPlaces.forEach(place => {
+
 const marker = L.marker([place.lat, place.lng])
 .addTo(map)
 .bindPopup(place.name);
 
-marker.on("click", () => {
-selectedPlaces.push(place);
-
-if (selectedPlaces.length === 2) {
-drawRoute(selectedPlaces[0], selectedPlaces[1]);
-selectedPlaces = [];
-}
-});
-
 markers.push(marker);
+
 });
+
+// draw distances between ALL saved places
+for (let i = 0; i < savedPlaces.length; i++) {
+for (let j = i + 1; j < savedPlaces.length; j++) {
+drawLine(savedPlaces[i], savedPlaces[j]);
+}
 }
 
-function drawRoute(a, b) {
-if (routeLine) map.removeLayer(routeLine);
+}
 
-routeLine = L.polyline(
-[[a.lat, a.lng], [b.lat, b.lng]],
-{ color: "blue", weight: 5 }
-).addTo(map);
+// ============================
+// DRAW LINE + DISTANCE LABEL
+// ============================
+function drawLine(a, b) {
 
 const distance = getDistance(a.lat, a.lng, b.lat, b.lng);
 
-document.getElementById("info").innerText =
-`${a.name} → ${b.name} | ${(distance / 1000).toFixed(2)} km`;
+const line = L.polyline(
+[[a.lat, a.lng], [b.lat, b.lng]],
+{
+color: "#3b82f6",
+weight: 3,
+dashArray: "6,6"
+}
+).addTo(map);
 
-map.fitBounds(routeLine.getBounds());
+line.bindTooltip(
+`${a.name} ↔ ${b.name}<br>${(distance / 1000).toFixed(2)} km`,
+{ permanent: false }
+);
+
+routeLines.push(line);
 }
 
+// ============================
+// DISTANCE CALCULATION
+// ============================
 function getDistance(lat1, lon1, lat2, lon2) {
+
 const R = 6371e3;
 
 const φ1 = lat1 * Math.PI / 180;
@@ -155,31 +152,76 @@ const Δλ = (lon2 - lon1) * Math.PI / 180;
 
 const a =
 Math.sin(Δφ / 2) ** 2 +
-Math.cos(φ1) * Math.cos(φ2) *
+Math.cos(φ1) *
+Math.cos(φ2) *
 Math.sin(Δλ / 2) ** 2;
 
-return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+return R * c;
 }
 
-function getLocation() {
-if (!map) return;
+// ============================
+// LIVE LOCATION TRACKING
+// ============================
+function startTracking() {
 
-navigator.geolocation.getCurrentPosition(pos => {
+if (!navigator.geolocation) {
+alert("Geolocation not supported");
+return;
+}
+
+navigator.geolocation.watchPosition(pos => {
+
 const lat = pos.coords.latitude;
 const lng = pos.coords.longitude;
 
-map.setView([lat, lng], 15);
-
-L.marker([lat, lng])
-.addTo(map)
-.bindPopup("You are here")
-.openPopup();
-
-document.getElementById("info").innerText = "Location found";
-});
+// first time: create marker
+if (!userMarker) {
+userMarker = L.circleMarker([lat, lng], {
+radius: 10,
+color: "#22c55e",
+fillColor: "#22c55e",
+fillOpacity: 1
+}).addTo(map).bindPopup("You are here");
 }
 
-window.onload = initMap;
+// update position
+userMarker.setLatLng([lat, lng]);
+
+map.setView([lat, lng], 15);
+
+document.getElementById("info").innerText =
+"Live tracking active";
+
+}, err => {
+alert("Location permission denied or unavailable");
+});
+
+}
+
+// ============================
+// ADD PLACE BY CLICKING MAP
+// ============================
+map.on("click", function (e) {
+
+const name = prompt("Name this place");
+if (!name) return;
+
+savedPlaces.push({
+name,
+lat: e.latlng.lat,
+lng: e.latlng.lng
+});
+
+savePlaces();
+renderPlaces();
+
+});
+
+// init
+renderPlaces();
+
 </script>
 
 </body>
