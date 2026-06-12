@@ -1,105 +1,45 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Map Explorer</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>My Map</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-<style>
 
-body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: #0f172a;
-    color: white;
-    height: 100vh;
+body{
+margin:0;
+font-family:Arial;
+background:#0f172a;
+color:white;
 }
 
-#topbar {
-    padding: 12px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: #111827;
-    border-bottom: 1px solid #334155;
+#topbar{
+background:#111827;
+padding:10px;
+display:flex;
+gap:10px;
+align-items:center;
 }
 
-button {
-    background: #2563eb;
-    color: white;
-    border: none;
-    padding: 10px 14px;
-    border-radius: 8px;
-    cursor: pointer;
+button{
+padding:10px;
+border:none;
+border-radius:8px;
+background:#2563eb;
+color:white;
+cursor:pointer;
 }
 
-button:hover {
-    background: #1d4ed8;
+#info{
+margin-left:10px;
 }
 
-#info {
-    color: #cbd5e1;
-}
-
-#container {
-    display: flex;
-    height: calc(100vh - 60px);
-}
-
-#list {
-    width: 35%;
-    overflow-y: auto;
-    border-right: 1px solid #334155;
-    background: #111827;
-}
-
-#map {
-    width: 65%;
-}
-
-.place {
-    padding: 12px;
-    margin: 8px;
-    border-radius: 10px;
-    background: #1e293b;
-    cursor: pointer;
-    transition: 0.2s;
-}
-
-.place:hover {
-    background: #334155;
-}
-
-.name {
-    font-weight: bold;
-    color: white;
-}
-
-.distance {
-    font-size: 12px;
-    color: #94a3b8;
-}
-
-.saved-title {
-    padding: 12px;
-    background: #0f172a;
-    color: #fbbf24;
-    font-weight: bold;
-}
-
-.saved-item {
-    padding: 12px;
-    margin: 8px;
-    border-radius: 10px;
-    background: #78350f;
-    cursor: pointer;
-}
-
-.saved-item:hover {
-    background: #92400e;
+#map{
+height:90vh;
 }
 
 </style>
@@ -108,334 +48,175 @@ button:hover {
 <body>
 
 <div id="topbar">
-    <button onclick="findPlaces()">Find Nearby Places</button>
-    <button onclick="startRouteMode()">Create Route</button>
-    <button onclick="clearRoute()">Clear Route</button>
-    <span id="info">Click to load</span>
+<button onclick="getLocation()">Find Me</button>
+<span id="info">Ready</span>
 </div>
 
-<div id="container">
-    <div id="list">No data loaded</div>
-    <div id="map"></div>
-</div>
+<div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-let map;
-let userLat, userLng;
-let userMarker;
+let map = L.map('map').setView([55.9533,-3.1883],13);
+
+L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+{
+attribution:'© OpenStreetMap'
+}
+).addTo(map);
+
+let savedPlaces =
+JSON.parse(localStorage.getItem("savedPlaces") || "[]");
+
 let markers = [];
-let placesData = [];
-
-// ✅ SAVED PLACES (persistent)
-let savedPlaces = JSON.parse(localStorage.getItem("savedPlaces") || "[]");
-
-let routeMode = false;
-let firstPlace = null;
+let selectedPlaces = [];
 let routeLine = null;
 
-// =========================
-// LOAD NEARBY PLACES
-// =========================
-function findPlaces() {
-
-    document.getElementById("info").innerText = "Getting location...";
-
-    navigator.geolocation.getCurrentPosition(async function(pos) {
-
-        userLat = pos.coords.latitude;
-        userLng = pos.coords.longitude;
-
-        if (!map) {
-            map = L.map('map').setView([userLat, userLng], 15);
-
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap'
-            }).addTo(map);
-
-            // CLICK TO SAVE PLACE
-            map.on("click", function(e) {
-
-                const name = prompt("Name this place:");
-
-                if (!name) return;
-
-                const place = {
-                    name,
-                    lat: e.latlng.lat,
-                    lng: e.latlng.lng
-                };
-
-                savedPlaces.push(place);
-                localStorage.setItem("savedPlaces", JSON.stringify(savedPlaces));
-
-                renderSavedPlaces();
-            });
-        }
-
-        // reset markers
-        if (userMarker) map.removeLayer(userMarker);
-        markers.forEach(m => map.removeLayer(m));
-        markers = [];
-
-        userMarker = L.marker([userLat, userLng])
-            .addTo(map)
-            .bindPopup("You are here");
-
-        map.setView([userLat, userLng], 15);
-
-        const query = `
-        [out:json][timeout:25];
-        (
-          node["amenity"~"cafe|restaurant|fast_food"](around:8000,${userLat},${userLng});
-          node["shop"](around:8000,${userLat},${userLng});
-        );
-        out;
-        `;
-
-        const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
-
-        try {
-
-            const res = await fetch(url);
-            const data = await res.json();
-
-            placesData = data.elements.map(el => {
-
-                const name = el.tags?.name || "Unknown place";
-
-                const distance = getDistance(
-                    userLat, userLng,
-                    el.lat, el.lon
-                );
-
-                return { name, lat: el.lat, lng: el.lon, distance };
-            });
-
-            placesData.sort((a, b) => a.distance - b.distance);
-
-            renderAll();
-
-            document.getElementById("info").innerText =
-                `Found ${placesData.length} places`;
-
-        } catch (e) {
-            document.getElementById("info").innerText =
-                "Error loading places";
-        }
-
-    });
+function savePlaces(){
+localStorage.setItem(
+"savedPlaces",
+JSON.stringify(savedPlaces)
+);
 }
 
-// =========================
-// RENDER EVERYTHING
-// =========================
-function renderAll() {
-    renderList();
-    renderMarkers();
-    renderSavedPlaces();
+function renderPlaces(){
+
+markers.forEach(m=>map.removeLayer(m));
+markers=[];
+
+savedPlaces.forEach(place=>{
+
+const marker =
+L.marker([place.lat,place.lng])
+.addTo(map)
+.bindPopup(place.name);
+
+marker.on("click",()=>{
+
+selectedPlaces.push(place);
+
+if(selectedPlaces.length===2){
+
+drawRoute(
+selectedPlaces[0],
+selectedPlaces[1]
+);
+
+selectedPlaces=[];
 }
 
-// =========================
-// LIVE PLACES LIST
-// =========================
-function renderList() {
+});
 
-    const list = document.getElementById("list");
-    list.innerHTML = "";
+markers.push(marker);
 
-    placesData.forEach((p, i) => {
+});
 
-        const div = document.createElement("div");
-        div.className = "place";
-
-        div.innerHTML = `
-            <div class="name">${p.name}</div>
-            <div class="distance">${p.distance.toFixed(0)}m away</div>
-        `;
-
-      div.onclick = () => {
-
-    map.setView([p.lat, p.lng], 17);
-
-    if (routeMode) {
-
-        if (!firstPlace) {
-
-            firstPlace = p;
-
-            document.getElementById("info").innerText =
-                "Select destination place";
-
-        } else {
-
-            drawRoute(firstPlace, p);
-
-            routeMode = false;
-        }
-    }
-};
-
-        list.appendChild(div);
-    });
 }
 
-// =========================
-// LIVE MARKERS
-// =========================
-function renderMarkers() {
+function drawRoute(a,b){
 
-    placesData.forEach(p => {
-
-        const marker = L.marker([p.lat, p.lng])
-            .addTo(map)
-            .bindPopup(`
-                <b>${p.name}</b><br>
-                ${p.distance.toFixed(0)}m away
-            `);
-
-        markers.push(marker);
-    });
+if(routeLine){
+map.removeLayer(routeLine);
 }
 
-// =========================
-// SAVED PLACES (YOUR OWN)
-// =========================
-function renderSavedPlaces() {
+routeLine = L.polyline(
+[
+[a.lat,a.lng],
+[b.lat,b.lng]
+],
+{
+color:"blue",
+weight:5
+}
+).addTo(map);
 
-    // clear old saved markers by reloading map layer approach
-    savedPlaces.forEach(p => {
+const distance =
+getDistance(
+a.lat,
+a.lng,
+b.lat,
+b.lng
+);
 
-        const icon = L.divIcon({
-            className: "",
-            html: "⭐",
-            iconSize: [20, 20]
-        });
+document.getElementById("info").innerText =
+(a.name + " → " + b.name +
+" | " +
+(distance/1000).toFixed(2) +
+" km");
 
-        L.marker([p.lat, p.lng], { icon })
-            .addTo(map)
-            .bindPopup(`
-                <b>Saved Place</b><br>
-                ${p.name}
-            `);
-    });
+map.fitBounds(routeLine.getBounds());
 
-    // show in list too
-    const list = document.getElementById("list");
-
-    if (savedPlaces.length > 0) {
-
-        const header = document.createElement("div");
-        header.className = "saved-title";
-        header.innerText = "⭐ Your Saved Places";
-        list.prepend(header);
-
-        savedPlaces.forEach(p => {
-
-            const div = document.createElement("div");
-            div.className = "saved-item";
-
-            div.innerHTML = `
-                <div class="name">${p.name}</div>
-                <div class="distance">Saved location</div>
-            `;
-
-            div.onclick = () => {
-                map.setView([p.lat, p.lng], 17);
-            };
-
-            list.appendChild(div);
-        });
-    }
 }
 
-// =========================
-// DISTANCE FUNCTION
-// =========================
-function getDistance(lat1, lon1, lat2, lon2) {
+function getDistance(lat1,lon1,lat2,lon2){
 
-    const R = 6371e3;
+const R = 6371e3;
 
-    const φ1 = lat1 * Math.PI/180;
-    const φ2 = lat2 * Math.PI/180;
+const φ1 = lat1*Math.PI/180;
+const φ2 = lat2*Math.PI/180;
 
-    const Δφ = (lat2-lat1) * Math.PI/180;
-    const Δλ = (lon2-lon1) * Math.PI/180;
+const Δφ=(lat2-lat1)*Math.PI/180;
+const Δλ=(lon2-lon1)*Math.PI/180;
 
-    const a =
-        Math.sin(Δφ/2) ** 2 +
-        Math.cos(φ1) * Math.cos(φ2) *
-        Math.sin(Δλ/2) ** 2;
+const a=
+Math.sin(Δφ/2)**2+
+Math.cos(φ1)*
+Math.cos(φ2)*
+Math.sin(Δλ/2)**2;
 
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+const c=
+2*Math.atan2(
+Math.sqrt(a),
+Math.sqrt(1-a)
+);
 
-    return R * c;
+return R*c;
+
 }
 
-function getDistance(lat1, lon1, lat2, lon2) {
+function getLocation(){
 
-    ...
-    
-    return R * c;
+navigator.geolocation.getCurrentPosition(pos=>{
+
+const lat=pos.coords.latitude;
+const lng=pos.coords.longitude;
+
+map.setView([lat,lng],15);
+
+L.marker([lat,lng])
+.addTo(map)
+.bindPopup("You are here")
+.openPopup();
+
+document.getElementById("info").innerText =
+"Location found";
+
+});
+
 }
 
+map.on("click",function(e){
 
-function startRouteMode() {
+const name =
+prompt("Name this place");
 
-    routeMode = true;
-    firstPlace = null;
+if(!name) return;
 
-    document.getElementById("info").innerText =
-        "Select starting place";
-}
+savedPlaces.push({
+name:name,
+lat:e.latlng.lat,
+lng:e.latlng.lng
+});
 
-function clearRoute() {
+savePlaces();
+renderPlaces();
 
-    if (routeLine) {
-        map.removeLayer(routeLine);
-        routeLine = null;
-    }
+});
 
-    document.getElementById("info").innerText =
-        "Route cleared";
-}
+renderPlaces();
 
-function drawRoute(placeA, placeB) {
-
-    if (routeLine) {
-        map.removeLayer(routeLine);
-    }
-
-    routeLine = L.polyline([
-        [placeA.lat, placeA.lng],
-        [placeB.lat, placeB.lng]
-    ], {
-        color: "#3b82f6",
-        weight: 5
-    }).addTo(map);
-
-    map.fitBounds(routeLine.getBounds());
-
-    const distance = getDistance(
-        placeA.lat,
-        placeA.lng,
-        placeB.lat,
-        placeB.lng
-    );
-
-    const walkMinutes =
-        Math.round((distance / 1000) / 5 * 60);
-
-    document.getElementById("info").innerText =
-        `${(distance / 1000).toFixed(2)} km | 🚶 ${walkMinutes} mins`;
-}
-
-</script>
-
-</body>
-</html>
 </script>
 
 </body>
