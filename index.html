@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Location App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            text-align: center;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #result {
+            margin-top: 20px;
+        }
+
+        a {
+            display: block;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Location Finder</h1>
+
+    <button onclick="getLocation()">Get My Location</button>
+
+    <div id="result"></div>
+
+    <script>
+        function getLocation() {
+
+            const result = document.getElementById("result");
+
+            if (!navigator.geolocation) {
+                result.innerHTML = "Geolocation is not supported by your browser.";
+                return;
+            }
+
+            result.innerHTML = "Getting location...";
+
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+
+                    result.innerHTML = `
+                        <h3>Your Location</h3>
+                        <p>Latitude: ${lat}</p>
+                        <p>Longitude: ${lng}</p>
+                        <a href="https://maps.google.com/?q=${lat},${lng}" target="_blank">
+                            Open in Google Maps
+                        </a>
+                    `;
+                },
+                function(error) {
+                    result.innerHTML =
+                        "Unable to retrieve location. Please allow location access.";
+                }
+            );
+        }
+    </script>
+
+</body>
+</html>
