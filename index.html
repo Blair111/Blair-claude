@@ -160,7 +160,6 @@ function findNearby() {
 </html>
 function openDirections(lat, lng) {
 
-    // Get your current location again
     navigator.geolocation.getCurrentPosition(function(position) {
 
         const userLat = position.coords.latitude;
@@ -174,4 +173,5 @@ function openDirections(lat, lng) {
         window.open(url, "_blank");
 
     });
+
 }
