@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Map + Personal Places</title>
+<title>Map Explorer</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -27,6 +27,7 @@ body {
     height: calc(100vh - 60px);
 }
 
+/* LEFT PANEL */
 #list {
     width: 35%;
     overflow-y: auto;
@@ -34,10 +35,12 @@ body {
     background: #fafafa;
 }
 
+/* MAP */
 #map {
     width: 65%;
 }
 
+/* PLACE CARD */
 .place {
     padding: 12px;
     border-bottom: 1px solid #eee;
@@ -58,10 +61,23 @@ body {
     color: gray;
 }
 
-.small-btn {
-    font-size: 12px;
-    padding: 6px 8px;
+/* SAVED PLACE CARD */
+.saved-title {
+    padding: 10px;
+    background: #e8f0ff;
+    font-weight: bold;
+    border-bottom: 1px solid #ccc;
+}
+
+.saved-item {
+    padding: 10px;
+    background: #fff3cd;
+    border-bottom: 1px solid #ddd;
     cursor: pointer;
+}
+
+.saved-item:hover {
+    background: #ffe69c;
 }
 </style>
 </head>
@@ -74,7 +90,7 @@ body {
 </div>
 
 <div id="container">
-    <div id="list">No places loaded</div>
+    <div id="list">No data loaded</div>
     <div id="map"></div>
 </div>
 
@@ -88,39 +104,12 @@ let userMarker;
 let markers = [];
 let placesData = [];
 
-// ======================
-// PERSONAL PLACES STORAGE
-// ======================
+// ✅ SAVED PLACES (persistent)
 let savedPlaces = JSON.parse(localStorage.getItem("savedPlaces") || "[]");
 
-// ======================
-// INIT MAP CLICK TO SAVE
-// ======================
-function enableMapClickSave() {
-
-    map.on("click", function(e) {
-
-        const name = prompt("Name this place (e.g. Cafe, Future visit, etc):");
-
-        if (!name) return;
-
-        const newPlace = {
-            name,
-            lat: e.latlng.lat,
-            lng: e.latlng.lng,
-            type: "personal"
-        };
-
-        savedPlaces.push(newPlace);
-        localStorage.setItem("savedPlaces", JSON.stringify(savedPlaces));
-
-        renderSavedPlaces();
-    });
-}
-
-// ======================
+// =========================
 // LOAD NEARBY PLACES
-// ======================
+// =========================
 function findPlaces() {
 
     document.getElementById("info").innerText = "Getting location...";
@@ -137,9 +126,27 @@ function findPlaces() {
                 attribution: '&copy; OpenStreetMap'
             }).addTo(map);
 
-            enableMapClickSave();
+            // CLICK TO SAVE PLACE
+            map.on("click", function(e) {
+
+                const name = prompt("Name this place:");
+
+                if (!name) return;
+
+                const place = {
+                    name,
+                    lat: e.latlng.lat,
+                    lng: e.latlng.lng
+                };
+
+                savedPlaces.push(place);
+                localStorage.setItem("savedPlaces", JSON.stringify(savedPlaces));
+
+                renderSavedPlaces();
+            });
         }
 
+        // reset markers
         if (userMarker) map.removeLayer(userMarker);
         markers.forEach(m => map.removeLayer(m));
         markers = [];
@@ -180,9 +187,7 @@ function findPlaces() {
 
             placesData.sort((a, b) => a.distance - b.distance);
 
-            renderList();
-            renderMarkers();
-            renderSavedPlaces();
+            renderAll();
 
             document.getElementById("info").innerText =
                 `Found ${placesData.length} places`;
@@ -192,15 +197,21 @@ function findPlaces() {
                 "Error loading places";
         }
 
-    }, function(err) {
-        document.getElementById("info").innerText =
-            "Location error: " + err.message;
     });
 }
 
-// ======================
-// RENDER LIST (LIVE PLACES)
-// ======================
+// =========================
+// RENDER EVERYTHING
+// =========================
+function renderAll() {
+    renderList();
+    renderMarkers();
+    renderSavedPlaces();
+}
+
+// =========================
+// LIVE PLACES LIST
+// =========================
 function renderList() {
 
     const list = document.getElementById("list");
@@ -225,9 +236,9 @@ function renderList() {
     });
 }
 
-// ======================
-// RENDER LIVE MARKERS
-// ======================
+// =========================
+// LIVE MARKERS
+// =========================
 function renderMarkers() {
 
     placesData.forEach(p => {
@@ -243,27 +254,60 @@ function renderMarkers() {
     });
 }
 
-// ======================
-// RENDER SAVED PLACES
-// ======================
+// =========================
+// SAVED PLACES (YOUR OWN)
+// =========================
 function renderSavedPlaces() {
 
+    // clear old saved markers by reloading map layer approach
     savedPlaces.forEach(p => {
 
-        L.marker([p.lat, p.lng], {
-            icon: L.icon({
-                iconUrl: "https://maps.gstatic.com/mapfiles/ms2/micons/blue-dot.png",
-                iconSize: [32, 32]
-            })
-        })
-        .addTo(map)
-        .bindPopup("📍 " + p.name);
+        const icon = L.divIcon({
+            className: "",
+            html: "⭐",
+            iconSize: [20, 20]
+        });
+
+        L.marker([p.lat, p.lng], { icon })
+            .addTo(map)
+            .bindPopup(`
+                <b>Saved Place</b><br>
+                ${p.name}
+            `);
     });
+
+    // show in list too
+    const list = document.getElementById("list");
+
+    if (savedPlaces.length > 0) {
+
+        const header = document.createElement("div");
+        header.className = "saved-title";
+        header.innerText = "⭐ Your Saved Places";
+        list.prepend(header);
+
+        savedPlaces.forEach(p => {
+
+            const div = document.createElement("div");
+            div.className = "saved-item";
+
+            div.innerHTML = `
+                <div class="name">${p.name}</div>
+                <div class="distance">Saved location</div>
+            `;
+
+            div.onclick = () => {
+                map.setView([p.lat, p.lng], 17);
+            };
+
+            list.appendChild(div);
+        });
+    }
 }
 
-// ======================
+// =========================
 // DISTANCE FUNCTION
-// ======================
+// =========================
 function getDistance(lat1, lon1, lat2, lon2) {
 
     const R = 6371e3;
