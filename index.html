@@ -3,51 +3,39 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Nearby Places Map</title>
+<title>Nearby Map App</title>
 
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-/>
-  
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
 <style>
 body {
-    font-family: Arial, sans-serif;
-    text-align: center;
+    font-family: Arial;
     margin: 0;
     padding: 15px;
-}
-
-h1 {
-    margin: 10px 0;
+    text-align: center;
 }
 
 button {
-    padding: 12px 18px;
-    margin: 8px;
+    padding: 10px 15px;
+    margin: 5px;
     cursor: pointer;
 }
 
 #map {
     height: 500px;
     width: 100%;
-    border-radius: 10px;
     margin-top: 10px;
-}
-
-#info {
-    margin: 10px;
 }
 </style>
 </head>
 
 <body>
 
-<h1>Nearby Places Finder</h1>
+<h2>Nearby Places Map</h2>
 
-<button onclick="findNearby()">Find Nearby Places</button>
+<button onclick="findPlaces()">Find Nearby Places</button>
 
-<div id="info">Click to load nearby places around you</div>
+<div id="info">Click button to start</div>
 
 <div id="map"></div>
 
@@ -59,119 +47,96 @@ let map;
 let userMarker;
 let placeMarkers = [];
 
-function findNearby() {
+function findPlaces() {
 
-    const info = document.getElementById("info");
+    document.getElementById("info").innerText = "Getting location...";
 
-    if (!navigator.geolocation) {
-        info.innerHTML = "Geolocation not supported";
-        return;
-    }
+    navigator.geolocation.getCurrentPosition(async function(pos) {
 
-    info.innerHTML = "Getting your location...";
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
 
-    navigator.geolocation.getCurrentPosition(async function(position) {
+        document.getElementById("info").innerText = "Loading places...";
 
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
-
-        info.innerHTML = "Loading nearby places...";
-
-        // Create map once
         if (!map) {
             map = L.map('map').setView([lat, lng], 16);
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors'
+                attribution: '&copy; OpenStreetMap'
             }).addTo(map);
         }
 
-        // Clear old markers
+        if (userMarker) map.removeLayer(userMarker);
         placeMarkers.forEach(m => map.removeLayer(m));
         placeMarkers = [];
 
-        if (userMarker) {
-            map.removeLayer(userMarker);
-        }
-
-        userMarker = L.marker([lat, lng])
-            .addTo(map)
-            .bindPopup("You are here")
-            .openPopup();
+        userMarker = L.marker([lat, lng]).addTo(map)
+            .bindPopup("You are here");
 
         map.setView([lat, lng], 16);
 
-        // Overpass API query (cafes, restaurants, shops)
         const query = `
-            [out:json];
-            (
-              node["amenity"~"cafe|restaurant|fast_food"](around:1000,${lat},${lng});
-              node["shop"](around:1000,${lat},${lng});
-            );
-            out;
+        [out:json];
+        (
+          node["amenity"~"cafe|restaurant|fast_food"](around:1000,${lat},${lng});
+          node["shop"](around:1000,${lat},${lng});
+        );
+        out;
         `;
 
         const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
 
         try {
-            const response = await fetch(url);
-            const data = await response.json();
+            const res = await fetch(url);
+            const data = await res.json();
 
-            if (!data.elements.length) {
-                info.innerHTML = "No places found nearby.";
-                return;
-            }
+            data.elements.forEach(el => {
 
-            data.elements.forEach(place => {
+                const name = el.tags?.name || "Unknown place";
 
-                const name = place.tags.name || "Unnamed place";
+                const marker = L.marker([el.lat, el.lon]).addTo(map);
 
-                const marker = const marker = L.marker([place.lat, place.lon])
-    .addTo(map)
-    .bindPopup(`
-        <b>${name}</b><br>
-        <button onclick="openDirections(${place.lat}, ${place.lon})">
-            Get Directions
-        </button>
-    `);
+                marker.bindPopup(`
+                    <b>${name}</b><br>
+                    <button onclick="openDirections(${el.lat}, ${el.lon})">
+                        Get Directions
+                    </button>
+                `);
+
                 placeMarkers.push(marker);
             });
 
-            info.innerHTML = `Found ${data.elements.length} places nearby (1km radius)`;
+            document.getElementById("info").innerText =
+                `Found ${data.elements.length} places`;
 
-        } catch (error) {
-            info.innerHTML = "Error loading nearby places.";
+        } catch (e) {
+            document.getElementById("info").innerText =
+                "Error loading nearby places";
         }
 
-    },
-    function(error) {
-        info.innerHTML = "Location error: " + error.message;
-    },
-    {
-        enableHighAccuracy: false,
-        timeout: 20000
+    }, function(err) {
+        document.getElementById("info").innerText =
+            "Location error: " + err.message;
     });
+}
 
+function openDirections(lat, lng) {
+
+    navigator.geolocation.getCurrentPosition(function(pos) {
+
+        const userLat = pos.coords.latitude;
+        const userLng = pos.coords.longitude;
+
+        const url =
+            "https://www.google.com/maps/dir/?api=1" +
+            "&origin=" + userLat + "," + userLng +
+            "&destination=" + lat + "," + lng;
+
+        window.open(url, "_blank");
+    });
 }
 
 </script>
 
 </body>
 </html>
-function openDirections(lat, lng) {
-
-    navigator.geolocation.getCurrentPosition(function(position) {
-
-        const userLat = position.coords.latitude;
-        const userLng = position.coords.longitude;
-
-        const url =
-            `https://www.google.com/maps/dir/?api=1` +
-            `&origin=${userLat},${userLng}` +
-            `&destination=${lat},${lng}`;
-
-        window.open(url, "_blank");
-
-    });
-
-}
