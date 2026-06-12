@@ -1,98 +1,114 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Location Test</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Live Location Map</title>
+
+<!-- Leaflet map library -->
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
 
 <style>
 body {
     font-family: Arial, sans-serif;
-    max-width: 700px;
-    margin: 50px auto;
     text-align: center;
+    margin: 0;
     padding: 20px;
+}
+
+h1 {
+    margin: 15px 0;
 }
 
 button {
-    padding: 12px 24px;
-    font-size: 18px;
+    padding: 12px 20px;
+    font-size: 16px;
     cursor: pointer;
+    margin-bottom: 15px;
 }
 
-#result {
-    margin-top: 30px;
-    padding: 20px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    min-height: 100px;
+#info {
+    margin: 10px 0 20px 0;
+    font-size: 16px;
+}
+
+#map {
+    height: 500px;
+    width: 100%;
+    border-radius: 10px;
 }
 </style>
 </head>
 
 <body>
 
-<h1>Location Test App</h1>
+<h1>My Live Location Map</h1>
 
-<p>Click the button below to get your current location.</p>
+<button onclick="startTracking()">Show My Location</button>
 
-<button onclick="getLocation()">Get My Location</button>
+<div id="info">Click the button to load your map</div>
 
-<div id="result">
-    Waiting for location request...
-</div>
+<div id="map"></div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-function getLocation() {
+let map;
+let marker;
 
-    const result = document.getElementById("result");
+function startTracking() {
 
-    result.innerHTML = "Requesting location...";
+    const info = document.getElementById("info");
 
     if (!navigator.geolocation) {
-        result.innerHTML = "Geolocation is not supported by this browser.";
+        info.innerHTML = "Geolocation not supported";
         return;
     }
 
-    navigator.geolocation.getCurrentPosition(
+    info.innerHTML = "Getting location...";
 
+    navigator.geolocation.getCurrentPosition(
         function(position) {
 
             const lat = position.coords.latitude;
             const lng = position.coords.longitude;
-            const accuracy = Math.round(position.coords.accuracy);
 
-            result.innerHTML = `
-                <h2>Location Found</h2>
-                <p><strong>Latitude:</strong> ${lat}</p>
-                <p><strong>Longitude:</strong> ${lng}</p>
-                <p><strong>Accuracy:</strong> ${accuracy} metres</p>
-
-                <p>
-                    <a href="https://maps.google.com/?q=${lat},${lng}"
-                       target="_blank">
-                       Open in Google Maps
-                    </a>
-                </p>
+            info.innerHTML = `
+                Latitude: ${lat}<br>
+                Longitude: ${lng}
             `;
+
+            // Create map (only once)
+            if (!map) {
+                map = L.map('map').setView([lat, lng], 16);
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+
+                marker = L.marker([lat, lng]).addTo(map)
+                    .bindPopup("You are here")
+                    .openPopup();
+            } else {
+                map.setView([lat, lng], 16);
+                marker.setLatLng([lat, lng]);
+            }
         },
 
         function(error) {
-
-            result.innerHTML = `
-                <h2>Location Error</h2>
-                <p><strong>Error Code:</strong> ${error.code}</p>
-                <p><strong>Message:</strong> ${error.message}</p>
-            `;
+            info.innerHTML = "Error: " + error.message;
         },
 
         {
             enableHighAccuracy: false,
-            timeout: 60000,
-            maximumAge: 300000
+            timeout: 30000,
+            maximumAge: 60000
         }
-
     );
 }
 
