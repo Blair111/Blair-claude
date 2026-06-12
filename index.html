@@ -79,13 +79,14 @@ function findPlaces() {
 
         map.setView([lat, lng], 16);
 
-      const query = `
+const query = `
 [out:json];
 (
-  node["amenity"](around:3000,${lat},${lng});
-  node["shop"](around:3000,${lat},${lng});
-  way["amenity"](around:3000,${lat},${lng});
-  way["shop"](around:3000,${lat},${lng});
+  node["amenity"](around:8000,${lat},${lng});
+  node["shop"](around:8000,${lat},${lng});
+  way["amenity"](around:8000,${lat},${lng});
+  way["shop"](around:8000,${lat},${lng});
+  relation["amenity"](around:8000,${lat},${lng});
 );
 out center;
 `;
