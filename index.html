@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Location System (B2B MVP)</title>
+<title>Location SaaS MVP</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -11,49 +11,77 @@
 html, body {
     margin: 0;
     height: 100%;
-    font-family: Arial;
+    font-family: Inter, Arial, sans-serif;
+    background: #0b1220;
+    color: white;
 }
 
+/* TOP BAR */
 #topbar {
-    background: #111827;
-    color: white;
-    padding: 10px;
+    background: #0f172a;
+    padding: 12px 16px;
     display: flex;
     gap: 10px;
     align-items: center;
+    border-bottom: 1px solid #1f2937;
 }
 
 button {
     padding: 8px 12px;
     border: none;
-    border-radius: 6px;
-    background: #2563eb;
+    border-radius: 8px;
+    background: #3b82f6;
     color: white;
     cursor: pointer;
 }
 
-#map {
+button:hover {
+    background: #2563eb;
+}
+
+/* LAYOUT */
+#container {
+    display: flex;
     height: calc(100vh - 50px);
-    width: 100%;
 }
 
-#sidepanel {
-    position: fixed;
-    right: 10px;
-    top: 70px;
-    width: 300px;
-    max-height: 70vh;
+/* SIDEBAR */
+#sidebar {
+    width: 340px;
+    background: #0f172a;
+    border-right: 1px solid #1f2937;
+    padding: 12px;
     overflow-y: auto;
-    background: white;
-    border: 1px solid #ddd;
-    padding: 10px;
-    font-size: 13px;
-    z-index: 9999;
 }
 
-.item {
-    padding: 6px;
-    border-bottom: 1px solid #eee;
+/* MAP */
+#map {
+    flex: 1;
+}
+
+/* CARDS */
+.card {
+    background: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.title {
+    font-size: 12px;
+    opacity: 0.7;
+    margin-bottom: 6px;
+}
+
+.event-enter { color: #22c55e; font-weight: bold; }
+.event-exit { color: #ef4444; font-weight: bold; }
+
+.small-btn {
+    font-size: 12px;
+    padding: 4px 8px;
+    margin-top: 6px;
+    background: #ef4444;
 }
 </style>
 </head>
@@ -61,13 +89,14 @@ button {
 <body>
 
 <div id="topbar">
-<button id="trackBtn">Start Tracking</button>
-<button id="businessMode">Business Mode: OFF</button>
-<span id="status">Ready</span>
+    <button id="trackBtn">Start Tracking</button>
+    <button id="businessMode">Business Mode: OFF</button>
 </div>
 
-<div id="map"></div>
-<div id="sidepanel"></div>
+<div id="container">
+    <div id="sidebar"></div>
+    <div id="map"></div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
@@ -84,7 +113,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 /* =========================
-   STORAGE
+   DATA
 ========================= */
 
 let places = JSON.parse(localStorage.getItem("places") || "[]");
@@ -113,18 +142,15 @@ function save() {
 }
 
 /* =========================
-   EVENT SYSTEM (CORE)
+   EVENT SYSTEM
 ========================= */
 
 function addEvent(type, g) {
 
-    let text;
-
-    if (businessMode) {
-        text = (type === "ENTER" ? "CHECK-IN: " : "CHECK-OUT: ") + g.name;
-    } else {
-        text = (type === "ENTER" ? "Entered " : "Left ") + g.name;
-    }
+    const text =
+        businessMode
+            ? (type === "ENTER" ? "CHECK-IN: " : "CHECK-OUT: ") + g.name
+            : (type === "ENTER" ? "Entered " : "Left ") + g.name;
 
     feed.unshift({
         time: new Date().toLocaleTimeString(),
@@ -140,7 +166,7 @@ function addEvent(type, g) {
 }
 
 /* =========================
-   DISTANCE FUNCTION
+   DISTANCE
 ========================= */
 
 function distance(lat1, lon1, lat2, lon2) {
@@ -150,10 +176,10 @@ function distance(lat1, lon1, lat2, lon2) {
     const dLng = (lon2 - lon1) * Math.PI / 180;
 
     const a =
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.sin(dLat/2) ** 2 +
         Math.cos(lat1 * Math.PI/180) *
         Math.cos(lat2 * Math.PI/180) *
-        Math.sin(dLng/2) * Math.sin(dLng/2);
+        Math.sin(dLng/2) ** 2;
 
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
@@ -168,14 +194,34 @@ function drawGeofences() {
     geofenceLayers = [];
 
     geofences.forEach(g => {
+
         const circle = L.circle([g.lat, g.lng], {
             radius: g.radius,
             color: "orange",
             fillOpacity: 0.2
         }).addTo(map);
 
+        // attach id for deletion
+        circle._geoId = g.id;
+
         geofenceLayers.push(circle);
     });
+}
+
+/* =========================
+   DELETE GEOFENCE
+========================= */
+
+function deleteGeofence(id) {
+
+    geofences = geofences.filter(g => g.id !== id);
+
+    // reset state so no ghost tracking
+    delete insideState[id];
+
+    save();
+    drawGeofences();
+    renderPanel();
 }
 
 /* =========================
@@ -184,35 +230,50 @@ function drawGeofences() {
 
 function renderPanel() {
 
-    const el = document.getElementById("sidepanel");
+    const el = document.getElementById("sidebar");
+
+    const enterCount = feed.filter(f => f.type === "ENTER").length;
+    const exitCount = feed.filter(f => f.type === "EXIT").length;
 
     el.innerHTML = `
-    <div class="item"><b>LIVE FEED</b></div>
 
-    ${feed.length === 0 ? `<div class="item">No events yet</div>` :
-    feed.map(f => `
-        <div class="item">
-            <b>${f.type === "ENTER" ? "🟢 ENTER" : "🔴 EXIT"}</b><br>
-            ${f.time}<br>
-            ${f.text}
-        </div>
-    `).join("")}
+    <div class="card">
+        <div class="title">LIVE STATS</div>
+        <div>🟢 Entries: ${enterCount}</div>
+        <div>🔴 Exits: ${exitCount}</div>
+        <div>📍 Geofences: ${geofences.length}</div>
+    </div>
 
-    <div class="item"><b>GEOFENCES</b></div>
+    <div class="card">
+        <div class="title">GEOFENCES</div>
 
-    ${geofences.length === 0 ? `<div class="item">None</div>` :
-    geofences.map(g => `
-        <div class="item">
-            ${g.name} (${g.radius}m)
-        </div>
-    `).join("")}
+        ${geofences.length === 0 ? "None" :
+        geofences.map(g => `
+            <div style="margin-bottom:8px;">
+                📍 ${g.name} (${g.radius}m)
+                <br>
+                <button class="small-btn" onclick="deleteGeofence(${g.id})">
+                    Delete
+                </button>
+            </div>
+        `).join("")}
+    </div>
 
-    <div class="item"><b>PLACES</b></div>
+    <div class="card">
+        <div class="title">EVENT FEED</div>
 
-    ${places.length === 0 ? `<div class="item">None</div>` :
-    places.map(p => `
-        <div class="item">${p.name}</div>
-    `).join("")}
+        ${feed.length === 0 ? "No activity yet" :
+        feed.map(f => `
+            <div style="margin-bottom:10px;">
+                <div class="${f.type === "ENTER" ? "event-enter" : "event-exit"}">
+                    ${f.type}
+                </div>
+                <div style="font-size:12px;opacity:0.7">${f.time}</div>
+                <div>${f.text}</div>
+            </div>
+        `).join("")}
+    </div>
+
     `;
 }
 
@@ -243,11 +304,10 @@ document.getElementById("trackBtn").onclick = () => {
 
         accuracyCircle = L.circle([lat, lng], {
             radius: acc,
-            color: "#2563eb",
+            color: "#3b82f6",
             fillOpacity: 0.1
         }).addTo(map);
 
-        /* GEO ENGINE */
         geofences.forEach(g => {
 
             const d = distance(lat, lng, g.lat, g.lng);
@@ -280,43 +340,26 @@ document.getElementById("businessMode").onclick = () => {
 };
 
 /* =========================
-   MAP CLICK
+   ADD GEOFENCE (CLICK MAP)
 ========================= */
 
 map.on("click", e => {
 
-    const mode = prompt("Type 'geofence' or 'place'");
-
-    if (mode === "geofence") {
-
-        const name = prompt("Geofence name");
-        const radius = parseInt(prompt("Radius (m)", 200));
-
-        geofences.push({
-            id: Date.now(),
-            name,
-            lat: e.latlng.lat,
-            lng: e.latlng.lng,
-            radius
-        });
-
-        save();
-        drawGeofences();
-        renderPanel();
-
-        return;
-    }
-
-    const name = prompt("Place name");
+    const name = prompt("Geofence name");
     if (!name) return;
 
-    places.push({
+    const radius = parseInt(prompt("Radius (meters)", 200));
+
+    geofences.push({
+        id: Date.now(),
         name,
         lat: e.latlng.lat,
-        lng: e.latlng.lng
+        lng: e.latlng.lng,
+        radius
     });
 
     save();
+    drawGeofences();
     renderPanel();
 });
 
