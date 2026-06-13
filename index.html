@@ -4,15 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>Full Map Engine</title>
+<title>Advanced Map</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
+
 html, body {
 height: 100%;
 margin: 0;
-font-family: Arial;
+font-family: Arial, sans-serif;
 background: #0f172a;
 color: white;
 }
@@ -21,7 +22,7 @@ color: white;
 background: #111827;
 padding: 10px;
 display: flex;
-gap: 10px;
+gap: 15px;
 align-items: center;
 flex-wrap: wrap;
 }
@@ -35,23 +36,38 @@ color: white;
 cursor: pointer;
 }
 
+button:hover {
+background: #1d4ed8;
+}
+
+#info {
+font-weight: bold;
+}
+
+#coords {
+color: #93c5fd;
+}
+
 #map {
 height: calc(100vh - 60px);
 width: 100%;
 }
 
-#info {
-margin-left: 10px;
-}
 </style>
 </head>
 
 <body>
 
 <div id="topbar">
+
 <button onclick="startTracking()">Track Me</button>
-<span>Click map to add places • Click 2 markers to route</span>
+
 <span id="info">Ready</span>
+
+<span id="coords">
+Lat: -- | Lng: --
+</span>
+
 </div>
 
 <div id="map"></div>
@@ -60,165 +76,318 @@ margin-left: 10px;
 
 <script>
 
-let map = L.map('map').setView([55.9533, -3.1883], 13);
+// ======================
+// MAP
+// ======================
 
-// Base map
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+const map = L.map('map').setView([55.9533, -3.1883], 13);
+
+L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+{
 attribution: '© OpenStreetMap'
-}).addTo(map);
+}
+).addTo(map);
 
-// =======================
-// DATA STORAGE
-// =======================
-let savedPlaces = JSON.parse(localStorage.getItem("savedPlaces") || "[]");
+// ======================
+// STORAGE
+// ======================
+
+let savedPlaces =
+JSON.parse(
+localStorage.getItem("savedPlaces") || "[]"
+);
+
 let markers = [];
+
 let routeLayer = null;
 
-// routing selection
-let routeSelection = [];
+let selectedPlaces = [];
 
-// user location marker
 let userMarker = null;
 
-// =======================
-// SAVE PLACES
-// =======================
+// ======================
+// SAVE
+// ======================
+
 function savePlaces() {
-localStorage.setItem("savedPlaces", JSON.stringify(savedPlaces));
+
+localStorage.setItem(
+"savedPlaces",
+JSON.stringify(savedPlaces)
+);
+
 }
 
-// =======================
-// RENDER SAVED PLACES
-// =======================
+// ======================
+// REVERSE GEOCODE
+// ======================
+
+async function getAddress(lat, lng) {
+
+try {
+
+const response = await fetch(
+`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`
+);
+
+const data = await response.json();
+
+return data.display_name || "Address unavailable";
+
+}
+catch {
+
+return "Address unavailable";
+
+}
+
+}
+
+// ======================
+// RENDER MARKERS
+// ======================
+
 function renderPlaces() {
 
 markers.forEach(m => map.removeLayer(m));
+
 markers = [];
 
 savedPlaces.forEach(place => {
 
-const marker = L.marker([place.lat, place.lng])
+const marker =
+L.marker([place.lat, place.lng])
 .addTo(map)
-.bindPopup(place.name);
+.bindPopup(`
+<b>${place.name}</b>
+<br><br>
+
+<b>Latitude:</b><br>
+${place.lat.toFixed(6)}
+
+<br><br>
+
+<b>Longitude:</b><br>
+${place.lng.toFixed(6)}
+
+<br><br>
+
+<b>Address:</b><br>
+${place.address || "Unknown"}
+`);
 
 marker.on("click", () => {
 
-routeSelection.push(place);
+selectedPlaces.push(place);
 
-if (routeSelection.length === 2) {
-getRoute(routeSelection[0], routeSelection[1]);
-routeSelection = [];
+if (selectedPlaces.length === 2) {
+
+getRoute(
+selectedPlaces[0],
+selectedPlaces[1]
+);
+
+selectedPlaces = [];
+
 }
+
 });
 
 markers.push(marker);
+
 });
 
 }
 
-// =======================
+// ======================
+// LIVE MOUSE COORDINATES
+// ======================
+
+map.on("mousemove", function(e) {
+
+document.getElementById("coords").innerText =
+`Lat: ${e.latlng.lat.toFixed(6)} | Lng: ${e.latlng.lng.toFixed(6)}`;
+
+});
+
+// ======================
 // LIVE LOCATION TRACKING
-// =======================
+// ======================
+
 function startTracking() {
 
 if (!navigator.geolocation) {
+
 alert("Geolocation not supported");
+
 return;
+
 }
 
-navigator.geolocation.watchPosition(pos => {
+navigator.geolocation.watchPosition(
 
-const lat = pos.coords.latitude;
-const lng = pos.coords.longitude;
+(position) => {
+
+const lat = position.coords.latitude;
+const lng = position.coords.longitude;
 
 if (!userMarker) {
-userMarker = L.circleMarker([lat, lng], {
+
+userMarker =
+L.circleMarker(
+[lat, lng],
+{
 radius: 10,
 color: "#22c55e",
 fillColor: "#22c55e",
 fillOpacity: 1
-}).addTo(map).bindPopup("You are here");
+}
+)
+.addTo(map)
+.bindPopup("You are here");
+
 }
 
 userMarker.setLatLng([lat, lng]);
+
 map.setView([lat, lng], 15);
 
-document.getElementById("info").innerText = "Live tracking active";
+document.getElementById("info").innerText =
+"Tracking active";
 
-});
+},
+
+(error) => {
+
+document.getElementById("info").innerText =
+"Location unavailable";
 
 }
 
-// =======================
-// ADD PLACE BY CLICK
-// =======================
-map.on("click", function(e) {
+);
 
-const name = prompt("Name this place");
+}
+
+// ======================
+// ADD NEW SAVED PLACE
+// ======================
+
+map.on("click", async function(e) {
+
+const name =
+prompt("Name this place");
+
 if (!name) return;
 
+document.getElementById("info").innerText =
+"Looking up address...";
+
+const address =
+await getAddress(
+e.latlng.lat,
+e.latlng.lng
+);
+
 savedPlaces.push({
-name,
+
+name: name,
+
 lat: e.latlng.lat,
-lng: e.latlng.lng
+
+lng: e.latlng.lng,
+
+address: address
+
 });
 
 savePlaces();
+
 renderPlaces();
+
+document.getElementById("info").innerText =
+"Place saved";
 
 });
 
-// =======================
-// REAL ROAD ROUTING (OSRM)
-// =======================
-async function getRoute(a, b) {
+// ======================
+// REAL ROAD ROUTING
+// ======================
 
-const url =
-`https://router.project-osrm.org/route/v1/driving/` +
-`${a.lng},${a.lat};${b.lng},${b.lat}` +
-`?overview=full&geometries=geojson`;
+async function getRoute(a, b) {
 
 try {
 
-const res = await fetch(url);
-const data = await res.json();
+const url =
+`https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
 
-const route = data.routes[0];
+const response =
+await fetch(url);
 
-if (!route) {
-document.getElementById("info").innerText = "No route found";
+const data =
+await response.json();
+
+if (
+!data.routes ||
+!data.routes.length
+) {
+
+document.getElementById("info").innerText =
+"No route found";
+
 return;
+
 }
 
-// remove old route
-if (routeLayer) map.removeLayer(routeLayer);
+const route =
+data.routes[0];
 
-// draw BLUE route
-routeLayer = L.geoJSON(route.geometry, {
+if (routeLayer) {
+
+map.removeLayer(routeLayer);
+
+}
+
+routeLayer =
+L.geoJSON(
+route.geometry,
+{
 style: {
 color: "blue",
 weight: 5
 }
-}).addTo(map);
+}
+).addTo(map);
 
-map.fitBounds(routeLayer.getBounds());
+map.fitBounds(
+routeLayer.getBounds()
+);
 
-const km = route.distance / 1000;
-const min = route.duration / 60;
+const km =
+(route.distance / 1000).toFixed(2);
+
+const mins =
+(route.duration / 60).toFixed(1);
 
 document.getElementById("info").innerText =
-`${a.name} → ${b.name} | ${km.toFixed(2)} km | ${min.toFixed(1)} min`;
+`${a.name} → ${b.name} | ${km} km | ${mins} mins`;
 
-} catch (err) {
+}
+catch (err) {
+
+document.getElementById("info").innerText =
+"Routing error";
+
 console.error(err);
-document.getElementById("info").innerText = "Routing error";
-}
 
 }
 
-// =======================
-// INIT
-// =======================
+}
+
+// ======================
+// INITIAL LOAD
+// ======================
+
 renderPlaces();
 
 </script>
