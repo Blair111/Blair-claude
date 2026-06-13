@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>My Map v1.1</title>
+<title>My Map v2</title>
 
 <link rel="icon" href="data:,">
 
@@ -17,6 +17,7 @@ height:100%;
 font-family:Arial,sans-serif;
 }
 
+/* TOP BAR */
 #topbar{
 background:#111827;
 color:white;
@@ -40,6 +41,7 @@ button:hover{
 background:#1d4ed8;
 }
 
+/* MAP */
 #map{
 height:calc(100vh - 50px);
 width:100%;
@@ -53,21 +55,23 @@ font-weight:bold;
 color:#93c5fd;
 }
 
-/* FEED PANEL FIXED */
+/* FEED (FIXED PROPERLY) */
 #feed{
 position:fixed;
 right:10px;
 top:70px;
-width:280px;
-max-height:65vh;
+width:300px;
+max-height:70vh;
 overflow:auto;
 background:#111827;
 color:white;
 padding:10px;
 border-radius:10px;
 font-size:12px;
-display:none;
 z-index:9999;
+
+/* hidden state */
+display:none;
 }
 
 .feed-item{
@@ -82,21 +86,21 @@ border-bottom:1px solid #1f2937;
 <div id="topbar">
 <button onclick="trackMe()">Track Me</button>
 <button onclick="toggleFeed()" id="feedBtn">Feed</button>
+
 <span id="info">Ready</span>
 <span id="coords">Lat: -- | Lng: --</span>
 </div>
 
 <div id="map"></div>
-
 <div id="feed"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-// =====================
-// MAP
-// =====================
+/* =====================
+   MAP INIT
+===================== */
 
 const map = L.map('map').setView([55.9533,-3.1883],13);
 
@@ -104,43 +108,42 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 attribution:'© OpenStreetMap'
 }).addTo(map);
 
-// =====================
-// DATA
-// =====================
+/* =====================
+   DATA
+===================== */
 
 let geofences = JSON.parse(localStorage.getItem('geofences') || '[]');
 let feed = JSON.parse(localStorage.getItem('feed') || '[]');
 
-// =====================
-// STATE
-// =====================
+/* =====================
+   STATE
+===================== */
 
 let userMarker = null;
 let accuracyCircle = null;
 let enterTimes = {};
 let feedOpen = false;
 
-// =====================
-// SAVE
-// =====================
+/* =====================
+   SAVE
+===================== */
 
 function save(){
 localStorage.setItem('geofences', JSON.stringify(geofences));
 localStorage.setItem('feed', JSON.stringify(feed));
 }
 
-// =====================
-// FEED SYSTEM (FIXED)
-// =====================
+/* =====================
+   FEED SYSTEM (FIXED)
+===================== */
 
 function addFeed(text){
 
-const item = {
+feed.unshift({
 text,
 time:new Date().toLocaleTimeString()
-};
+});
 
-feed.unshift(item);
 save();
 
 if(feedOpen){
@@ -158,11 +161,12 @@ el.innerHTML = feed.map(i => `
 ${i.text}
 </div>
 `).join("");
+
 }
 
-// =====================
-// TOGGLE FEED (FIXED)
-// =====================
+/* =====================
+   TOGGLE FEED (100% STABLE)
+===================== */
 
 function toggleFeed(){
 
@@ -182,9 +186,9 @@ btn.innerText = "Feed";
 
 }
 
-// =====================
-// DISTANCE
-// =====================
+/* =====================
+   DISTANCE
+===================== */
 
 function distanceMeters(lat1,lng1,lat2,lng2){
 
@@ -201,34 +205,9 @@ Math.sin(dLng/2)**2;
 return R * 2 * Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// =====================
-// GEOFENCES
-// =====================
-
-function createGeofence(lat,lng){
-
-const name = prompt("Geofence name");
-if(!name) return;
-
-const radius = parseInt(prompt("Radius (m)",200));
-if(!radius) return;
-
-geofences.push({
-id:Date.now(),
-name,
-lat,
-lng,
-radius
-});
-
-save();
-
-alert("Geofence created");
-}
-
-// =====================
-// TRACKING (FIXED)
-// =====================
+/* =====================
+   TRACKING
+===================== */
 
 function trackMe(){
 
@@ -238,16 +217,14 @@ const lat = pos.coords.latitude;
 const lng = pos.coords.longitude;
 const accuracy = pos.coords.accuracy;
 
-// marker
+/* user marker */
 if(!userMarker){
-
 userMarker = L.marker([lat,lng]).addTo(map);
-
 }
 
 userMarker.setLatLng([lat,lng]);
 
-// accuracy
+/* accuracy circle */
 if(accuracyCircle) map.removeLayer(accuracyCircle);
 
 accuracyCircle = L.circle([lat,lng],{
@@ -256,7 +233,7 @@ color:"#2563eb",
 fillOpacity:0.1
 }).addTo(map);
 
-// geofence logic
+/* geofence check */
 geofences.forEach(g => {
 
 const d = distanceMeters(lat,lng,g.lat,g.lng);
@@ -278,28 +255,45 @@ enterTimes[g.id] = null;
 map.setView([lat,lng],15);
 
 }, err => {
-alert("Location permission denied or unavailable");
+alert("Location error or permission denied");
 });
 
 }
 
-// =====================
-// MAP CLICK
-// =====================
+/* =====================
+   GEOFENCE CREATION
+===================== */
 
-map.on("click", (e) => {
+map.on("click",(e)=>{
 
 const mode = prompt("Type: geofence or cancel");
 
 if(mode === "geofence"){
-createGeofence(e.latlng.lat,e.latlng.lng);
+
+const name = prompt("Geofence name");
+if(!name) return;
+
+const radius = parseInt(prompt("Radius (m)",200));
+if(!radius) return;
+
+geofences.push({
+id:Date.now(),
+name,
+lat:e.latlng.lat,
+lng:e.latlng.lng,
+radius
+});
+
+save();
+
+alert("Geofence created");
 }
 
 });
 
-// =====================
-// INIT
-// =====================
+/* =====================
+   INIT
+===================== */
 
 renderFeed();
 
