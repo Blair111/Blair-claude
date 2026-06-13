@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>My Map Clean v1</title>
+<title>Location Map v3</title>
 
 <link rel="icon" href="data:,">
 
@@ -24,7 +24,6 @@ padding:10px;
 display:flex;
 gap:10px;
 align-items:center;
-flex-wrap:wrap;
 }
 
 button{
@@ -45,15 +44,6 @@ height:calc(100vh - 50px);
 width:100%;
 }
 
-#info{
-font-weight:bold;
-}
-
-#coords{
-color:#93c5fd;
-}
-
-/* FEED PANEL */
 #feed{
 position:fixed;
 right:10px;
@@ -82,9 +72,7 @@ border-bottom:1px solid #1f2937;
 <div id="topbar">
 <button id="trackBtn">Track Me</button>
 <button id="feedBtn">Feed</button>
-
 <span id="info">Ready</span>
-<span id="coords">Lat: -- | Lng: --</span>
 </div>
 
 <div id="map"></div>
@@ -95,51 +83,81 @@ border-bottom:1px solid #1f2937;
 <script>
 
 /* =====================
-   SAFE INIT (NO GLOBAL HTML ONCLICK)
+   MAP INIT
 ===================== */
 
-document.addEventListener("DOMContentLoaded", () => {
-
-/* MAP */
 const map = L.map('map').setView([55.9533,-3.1883],13);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 attribution:'© OpenStreetMap'
 }).addTo(map);
 
-/* STATE */
+/* =====================
+   DATA
+===================== */
+
 let geofences = JSON.parse(localStorage.getItem('geofences') || '[]');
 let feed = JSON.parse(localStorage.getItem('feed') || '[]');
+
+/* =====================
+   STATE
+===================== */
 
 let userMarker = null;
 let accuracyCircle = null;
 let enterTimes = {};
 let feedOpen = false;
 
-/* SAVE */
+/* =====================
+   SAVE
+===================== */
+
 function save(){
 localStorage.setItem('geofences', JSON.stringify(geofences));
 localStorage.setItem('feed', JSON.stringify(feed));
 }
 
-/* FEED */
+/* =====================
+   FEED (GUARANTEED WORKING)
+===================== */
+
 function renderFeed(){
+
 const el = document.getElementById("feed");
-el.innerHTML = feed.map(i =>
-`<div class="feed-item"><b>${i.time}</b><br>${i.text}</div>`
-).join("");
+
+if(feed.length === 0){
+el.innerHTML = "<div class='feed-item'>No activity yet</div>";
+return;
+}
+
+el.innerHTML = feed.map(i => `
+<div class="feed-item">
+<b>${i.time}</b><br>
+${i.text}
+</div>
+`).join("");
+
 }
 
 function addFeed(text){
+
 feed.unshift({
 text,
 time:new Date().toLocaleTimeString()
 });
+
 save();
-if(feedOpen) renderFeed();
+
+if(feedOpen){
+renderFeed();
 }
 
-/* FEED BUTTON (FIXED RELIABILITY) */
+}
+
+/* =====================
+   FEED BUTTON (FIXED)
+===================== */
+
 document.getElementById("feedBtn").addEventListener("click", () => {
 
 const el = document.getElementById("feed");
@@ -155,7 +173,10 @@ el.style.display = "none";
 
 });
 
-/* TRACK BUTTON */
+/* =====================
+   TRACKING
+===================== */
+
 document.getElementById("trackBtn").addEventListener("click", () => {
 
 if(!navigator.geolocation){
@@ -176,7 +197,7 @@ userMarker = L.marker([lat,lng]).addTo(map);
 
 userMarker.setLatLng([lat,lng]);
 
-/* ACCURACY */
+/* ACCURACY RADIUS */
 if(accuracyCircle) map.removeLayer(accuracyCircle);
 
 accuracyCircle = L.circle([lat,lng],{
@@ -218,18 +239,21 @@ enterTimes[g.id] = null;
 map.setView([lat,lng],15);
 
 }, err => {
-alert("Location error");
+alert("Location permission denied");
 });
 
 });
 
-/* MAP CLICK = CREATE GEOFENCE */
+/* =====================
+   CREATE GEOFENCE
+===================== */
+
 map.on("click", (e) => {
 
 const name = prompt("Geofence name");
 if(!name) return;
 
-const radius = parseInt(prompt("Radius (m)",200));
+const radius = parseInt(prompt("Radius in meters",200));
 if(!radius) return;
 
 geofences.push({
@@ -246,10 +270,11 @@ alert("Geofence created");
 
 });
 
-/* INIT */
-renderFeed();
+/* =====================
+   INIT
+===================== */
 
-}); // DOM READY END
+renderFeed();
 
 </script>
 
