@@ -1,62 +1,60 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
-<title>Location System Stable</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Location System</title>
 
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-html,body{
-margin:0;
-height:100%;
-font-family:Arial;
+html, body {
+margin: 0;
+height: 100%;
+font-family: Arial;
 }
 
-#topbar{
-background:#111827;
-color:white;
-padding:10px;
-display:flex;
-gap:10px;
-align-items:center;
+#topbar {
+background: #111827;
+color: white;
+padding: 10px;
+display: flex;
+gap: 10px;
+align-items: center;
 }
 
-button{
-padding:8px 12px;
-border:0;
-border-radius:6px;
-background:#2563eb;
-color:white;
-cursor:pointer;
+button {
+padding: 8px 12px;
+border: none;
+border-radius: 6px;
+background: #2563eb;
+color: white;
+cursor: pointer;
 }
 
-#map{
-height:calc(100vh - 50px);
-width:100%;
+#map {
+height: calc(100vh - 50px);
+width: 100%;
 }
 
-#panel{
-position:fixed;
-right:10px;
-top:70px;
-width:300px;
-max-height:70vh;
-overflow:auto;
-background:white;
-color:black;
-padding:10px;
-border:1px solid #ddd;
-font-size:13px;
-z-index:9999;
+#sidepanel {
+position: fixed;
+right: 10px;
+top: 70px;
+width: 280px;
+max-height: 70vh;
+overflow-y: auto;
+background: white;
+border: 1px solid #ddd;
+padding: 10px;
+font-size: 13px;
+z-index: 9999;
 }
 
-.item{
-padding:6px;
-border-bottom:1px solid #eee;
+.item {
+padding: 6px;
+border-bottom: 1px solid #eee;
 }
 </style>
 </head>
@@ -64,29 +62,29 @@ border-bottom:1px solid #eee;
 <body>
 
 <div id="topbar">
-<button id="trackBtn">Track</button>
+<button id="trackBtn">Start Tracking</button>
 <span id="status">Ready</span>
 </div>
 
 <div id="map"></div>
-<div id="panel"></div>
+<div id="sidepanel"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
 /* =========================
-   MAP INIT
+   MAP
 ========================= */
 
-const map = L.map('map').setView([55.9533,-3.1883],13);
+const map = L.map('map').setView([55.9533, -3.1883], 13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-attribution:'© OpenStreetMap'
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+attribution: '© OpenStreetMap'
 }).addTo(map);
 
 /* =========================
-   STORAGE (RESTORED)
+   DATA STORAGE
 ========================= */
 
 let places = JSON.parse(localStorage.getItem("places") || "[]");
@@ -99,26 +97,81 @@ let feed = JSON.parse(localStorage.getItem("feed") || "[]");
 
 let userMarker = null;
 let accuracyCircle = null;
-let enterState = {};
 let geofenceLayers = [];
+let insideState = {};
 
 /* =========================
    SAVE
 ========================= */
 
-function save(){
+function save() {
 localStorage.setItem("places", JSON.stringify(places));
 localStorage.setItem("geofences", JSON.stringify(geofences));
 localStorage.setItem("feed", JSON.stringify(feed));
 }
 
 /* =========================
-   PANEL (FEED + LISTS)
+   FEED
 ========================= */
 
-function renderPanel(){
+function addFeed(text) {
+feed.unshift({
+time: new Date().toLocaleTimeString(),
+text
+});
+save();
+renderPanel();
+}
 
-const el = document.getElementById("panel");
+/* =========================
+   DISTANCE (GEOFENCE ENGINE)
+========================= */
+
+function distance(a, b, c, d) {
+const R = 6371000;
+
+const dLat = (c - a) * Math.PI / 180;
+const dLng = (d - b) * Math.PI / 180;
+
+const x =
+Math.sin(dLat / 2) ** 2 +
+Math.cos(a * Math.PI / 180) *
+Math.cos(c * Math.PI / 180) *
+Math.sin(dLng / 2) ** 2;
+
+return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+/* =========================
+   DRAW GEOFENCES
+========================= */
+
+function drawGeofences() {
+
+geofenceLayers.forEach(l => map.removeLayer(l));
+geofenceLayers = [];
+
+geofences.forEach(g => {
+
+const circle = L.circle([g.lat, g.lng], {
+radius: g.radius,
+color: "orange",
+fillOpacity: 0.2
+}).addTo(map);
+
+geofenceLayers.push(circle);
+
+});
+
+}
+
+/* =========================
+   PANEL UI
+========================= */
+
+function renderPanel() {
+
+const el = document.getElementById("sidepanel");
 
 el.innerHTML = `
 
@@ -132,82 +185,19 @@ feed.map(f => `
 `).join("")
 }
 
-<div class="item"><b>Saved Locations</b></div>
+<div class="item"><b>Places</b></div>
 
 ${places.length === 0 ? `<div class="item">None</div>` :
-places.map(p => `
-<div class="item">${p.name}</div>
-`).join("")
+places.map(p => `<div class="item">${p.name}</div>`).join("")
 }
 
 <div class="item"><b>Geofences</b></div>
 
 ${geofences.length === 0 ? `<div class="item">None</div>` :
-geofences.map(g => `
-<div class="item">${g.name} (${g.radius}m)</div>
-`).join("")
+geofences.map(g => `<div class="item">${g.name} (${g.radius}m)</div>`).join("")
 }
 
 `;
-
-}
-
-/* =========================
-   FEED
-========================= */
-
-function addFeed(msg){
-
-feed.unshift({
-text:msg,
-time:new Date().toLocaleTimeString()
-});
-
-save();
-renderPanel();
-
-}
-
-/* =========================
-   DISTANCE
-========================= */
-
-function distance(a,b,c,d){
-
-const R = 6371000;
-
-const dLat = (c-a)*Math.PI/180;
-const dLng = (d-b)*Math.PI/180;
-
-const x =
-Math.sin(dLat/2)**2 +
-Math.cos(a*Math.PI/180) *
-Math.cos(c*Math.PI/180) *
-Math.sin(dLng/2)**2;
-
-return R * 2 * Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-/* =========================
-   DRAW GEOFENCES (CRITICAL FIX)
-========================= */
-
-function drawGeofences(){
-
-geofenceLayers.forEach(l => map.removeLayer(l));
-geofenceLayers = [];
-
-geofences.forEach(g => {
-
-const circle = L.circle([g.lat,g.lng],{
-radius:g.radius,
-color:"orange",
-fillOpacity:0.2
-}).addTo(map);
-
-geofenceLayers.push(circle);
-
-});
 
 }
 
@@ -217,68 +207,77 @@ geofenceLayers.push(circle);
 
 document.getElementById("trackBtn").onclick = () => {
 
+if(!navigator.geolocation){
+alert("Geolocation not supported");
+return;
+}
+
 navigator.geolocation.watchPosition(pos => {
 
 const lat = pos.coords.latitude;
 const lng = pos.coords.longitude;
 const acc = pos.coords.accuracy;
 
+/* user marker */
 if(!userMarker){
-userMarker = L.marker([lat,lng]).addTo(map);
+userMarker = L.marker([lat, lng]).addTo(map);
 }
 
-userMarker.setLatLng([lat,lng]);
+userMarker.setLatLng([lat, lng]);
 
+/* accuracy circle */
 if(accuracyCircle) map.removeLayer(accuracyCircle);
 
-accuracyCircle = L.circle([lat,lng],{
-radius:acc,
-color:"#2563eb",
-fillOpacity:0.1
+accuracyCircle = L.circle([lat, lng], {
+radius: acc,
+color: "#2563eb",
+fillOpacity: 0.1
 }).addTo(map);
 
-/* geofence logic */
+/* geofence detection */
 geofences.forEach(g => {
 
-const d = distance(lat,lng,g.lat,g.lng);
+const d = distance(lat, lng, g.lat, g.lng);
 const inside = d < g.radius;
 
-if(inside && !enterState[g.id]){
-enterState[g.id] = true;
+if(inside && !insideState[g.id]) {
+insideState[g.id] = true;
 addFeed("Entered " + g.name);
 }
 
-if(!inside && enterState[g.id]){
-enterState[g.id] = false;
+if(!inside && insideState[g.id]) {
+insideState[g.id] = false;
 addFeed("Left " + g.name);
 }
 
 });
 
-map.setView([lat,lng],15);
+map.setView([lat, lng], 15);
 
-}, err => alert("Location blocked"));
+}, err => {
+alert("Location permission blocked");
+});
 
 };
 
 /* =========================
-   MAP CLICK (RESTORED)
+   MAP CLICK
 ========================= */
 
 map.on("click", e => {
 
 const mode = prompt("Type: place or geofence");
 
-if(mode === "geofence"){
+if(mode === "geofence") {
 
 const name = prompt("Geofence name");
-const radius = parseInt(prompt("Radius (m)",200));
+const radius = parseInt(prompt("Radius (m)", 200));
 
 geofences.push({
-id:Date.now(),
+id: Date.now(),
 name,
-lat:e.latlng.lat,
-lng:e.latlng.lng,
+lat: e.latlng.lat,
+lng: e.latlng.lng,
 radius
 });
 
@@ -294,8 +293,8 @@ if(!name) return;
 
 places.push({
 name,
-lat:e.latlng.lat,
-lng:e.latlng.lng
+lat: e.latlng.lat,
+lng: e.latlng.lng
 });
 
 save();
