@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>My Map</title>
+<title>Location Workflow Platform</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -20,7 +20,7 @@ background:#111827;
 color:white;
 padding:10px;
 display:flex;
-gap:15px;
+gap:12px;
 align-items:center;
 flex-wrap:wrap;
 }
@@ -50,6 +50,26 @@ font-weight:bold;
 #coords{
 color:#93c5fd;
 }
+
+#feed{
+position:absolute;
+right:10px;
+top:70px;
+width:260px;
+max-height:60vh;
+overflow:auto;
+background:#111827;
+color:white;
+padding:10px;
+border-radius:10px;
+font-size:12px;
+opacity:0.95;
+}
+
+.feed-item{
+border-bottom:1px solid #1f2937;
+padding:6px 0;
+}
 </style>
 </head>
 
@@ -57,79 +77,86 @@ color:#93c5fd;
 
 <div id="topbar">
 <button onclick="trackMe()">Track Me</button>
+<button onclick="showFeed()">Toggle Feed</button>
 <span id="info">Ready</span>
 <span id="coords">Lat: -- | Lng: --</span>
 </div>
 
 <div id="map"></div>
 
+<div id="feed" style="display:none;"></div>
+
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-// =====================
-// MAP
-// =====================
-
 const map = L.map('map').setView([55.9533,-3.1883],13);
 
-L.tileLayer(
-'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-{
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 attribution:'© OpenStreetMap'
-}
-).addTo(map);
+}).addTo(map);
 
 // =====================
-// STORAGE
+// DATA
 // =====================
 
-let places =
-JSON.parse(localStorage.getItem('places') || '[]');
-
-let geofences =
-JSON.parse(localStorage.getItem('geofences') || '[]');
+let places = JSON.parse(localStorage.getItem('places') || '[]');
+let geofences = JSON.parse(localStorage.getItem('geofences') || '[]');
+let experiences = JSON.parse(localStorage.getItem('experiences') || '[]');
+let visits = JSON.parse(localStorage.getItem('visits') || '[]');
 
 let markers = [];
 let geofenceCircles = [];
+
 let selected = [];
 let routeLayer = null;
 
 let userMarker = null;
 let accuracyCircle = null;
+
 let activeGeofence = null;
+let geofenceEnterTime = {};
 
 // =====================
 // SAVE
 // =====================
 
-function savePlaces(){
-localStorage.setItem(
-'places',
-JSON.stringify(places)
-);
-}
-
-function saveGeofences(){
-localStorage.setItem(
-'geofences',
-JSON.stringify(geofences)
-);
+function saveAll(){
+localStorage.setItem('places', JSON.stringify(places));
+localStorage.setItem('geofences', JSON.stringify(geofences));
+localStorage.setItem('experiences', JSON.stringify(experiences));
+localStorage.setItem('visits', JSON.stringify(visits));
 }
 
 // =====================
-// DISTANCE CALCULATION
+// FEED
+// =====================
+
+function logEvent(text){
+
+const time = new Date().toLocaleTimeString();
+
+visits.unshift({text,time});
+saveAll();
+
+const feed = document.getElementById("feed");
+
+const div = document.createElement("div");
+div.className = "feed-item";
+div.innerText = `${time} - ${text}`;
+
+feed.prepend(div);
+}
+
+// =====================
+// DISTANCE
 // =====================
 
 function distanceMeters(lat1,lng1,lat2,lng2){
 
 const R = 6371000;
-
-const dLat =
-(lat2-lat1)*Math.PI/180;
-
-const dLng =
-(lng2-lng1)*Math.PI/180;
+const dLat = (lat2-lat1)*Math.PI/180;
+const dLng = (lng2-lng1)*Math.PI/180;
 
 const a =
 Math.sin(dLat/2)**2 +
@@ -137,466 +164,204 @@ Math.cos(lat1*Math.PI/180) *
 Math.cos(lat2*Math.PI/180) *
 Math.sin(dLng/2)**2;
 
-return R * 2 *
-Math.atan2(
-Math.sqrt(a),
-Math.sqrt(1-a)
-);
-
+return R * 2 * Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
 // =====================
-// ADDRESS LOOKUP
+// EXPERIENCES
 // =====================
 
-async function getAddress(lat,lng){
-
-try{
-
-const response = await fetch(
-`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`
-);
-
-if(!response.ok){
-throw new Error("Lookup failed");
-}
-
-const data = await response.json();
-
-return data.display_name || "Address not found";
-
-}
-catch(err){
-
-console.error(err);
-
-return "Address lookup failed";
-
-}
-
+function getExperience(geofenceId){
+return experiences.find(e => e.geofenceId === geofenceId);
 }
 
 // =====================
-// PLACES
-// =====================
-
-function renderPlaces(){
-
-markers.forEach(marker=>{
-map.removeLayer(marker);
-});
-
-markers=[];
-
-places.forEach(place=>{
-
-const marker = L.marker(
-[place.lat,place.lng]
-)
-.addTo(map)
-.bindPopup(`
-<b>${place.name}</b>
-<br><br>
-
-<b>Latitude:</b><br>
-${place.lat.toFixed(6)}
-
-<br><br>
-
-<b>Longitude:</b><br>
-${place.lng.toFixed(6)}
-
-<br><br>
-
-<b>Address:</b><br>
-${place.address}
-`);
-
-marker.on('click',()=>{
-
-selected.push(place);
-
-if(selected.length===2){
-
-createRoute(
-selected[0],
-selected[1]
-);
-
-selected=[];
-
-}
-
-});
-
-markers.push(marker);
-
-});
-
-}
-
-// =====================
-// GEOFENCES
+// RENDER GEOFENCES
 // =====================
 
 function renderGeofences(){
 
-geofenceCircles.forEach(circle=>{
-map.removeLayer(circle);
-});
+geofenceCircles.forEach(c => map.removeLayer(c));
+geofenceCircles = [];
 
-geofenceCircles=[];
+geofences.forEach(g => {
 
-geofences.forEach(g=>{
-
-const circle = L.circle(
-[g.lat,g.lng],
-{
+const circle = L.circle([g.lat,g.lng],{
 radius:g.radius,
 color:"orange",
-fillColor:"orange",
-fillOpacity:0.15,
-weight:2
-}
-)
-.addTo(map)
-.bindPopup(`
-<b>${g.name}</b>
-<br>
-Radius: ${g.radius}m
+fillOpacity:0.15
+}).addTo(map);
+
+circle.bindPopup(`
+<b>${g.name}</b><br>
+Click to add experience
 `);
 
-geofenceCircles.push(circle);
+circle.on("click", () => {
 
+const text = prompt("Add experience message for this location:");
+
+if(!text) return;
+
+experiences.push({
+geofenceId:g.id,
+text
 });
 
+saveAll();
+
+alert("Experience saved");
+});
+
+geofenceCircles.push(circle);
+});
 }
+
+// =====================
+// CREATE GEOFENCE
+// =====================
 
 function createGeofence(lat,lng){
 
-const name =
-prompt("Geofence name");
-
+const name = prompt("Geofence name");
 if(!name) return;
 
-const radius =
-parseInt(
-prompt("Radius in metres","200")
-);
-
+const radius = parseInt(prompt("Radius (m)",200));
 if(!radius) return;
 
-geofences.push({
-name,
-lat,
-lng,
-radius
-});
+const id = Date.now().toString();
 
-saveGeofences();
+geofences.push({id,name,lat,lng,radius});
+saveAll();
 renderGeofences();
 
-document.getElementById("info").innerText =
-"Geofence created";
-
 }
 
 // =====================
-// ROUTING
-// =====================
-
-async function createRoute(a,b){
-
-try{
-
-const url =
-`https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
-
-const response =
-await fetch(url);
-
-const data =
-await response.json();
-
-if(!data.routes ||
-!data.routes.length){
-
-document.getElementById("info").innerText =
-"No route found";
-
-return;
-
-}
-
-if(routeLayer){
-map.removeLayer(routeLayer);
-}
-
-routeLayer =
-L.geoJSON(
-data.routes[0].geometry,
-{
-style:{
-color:"blue",
-weight:5
-}
-}
-).addTo(map);
-
-map.fitBounds(
-routeLayer.getBounds()
-);
-
-const km =
-(data.routes[0].distance/1000)
-.toFixed(2);
-
-const mins =
-(data.routes[0].duration/60)
-.toFixed(1);
-
-document.getElementById("info").innerText =
-`${a.name} → ${b.name} | ${km} km | ${mins} mins`;
-
-}
-catch(err){
-
-console.error(err);
-
-document.getElementById("info").innerText =
-"Routing error";
-
-}
-
-}
-
-// =====================
-// LOCATION TRACKING
+// TRACKING
 // =====================
 
 function trackMe(){
 
-if(!navigator.geolocation){
+navigator.geolocation.watchPosition(pos => {
 
-alert(
-"Geolocation not supported"
-);
+const lat = pos.coords.latitude;
+const lng = pos.coords.longitude;
+const accuracy = pos.coords.accuracy;
 
-return;
-
-}
-
-navigator.geolocation.watchPosition(
-
-(position)=>{
-
-const lat =
-position.coords.latitude;
-
-const lng =
-position.coords.longitude;
-
-const accuracy =
-position.coords.accuracy;
-
+// user marker
 if(!userMarker){
 
-const userIcon =
-L.divIcon({
-
-html:`
-<div style="
-width:20px;
-height:20px;
-background:#2563eb;
-border:3px solid white;
-border-radius:50%;
-box-shadow:0 0 12px rgba(37,99,235,0.9);
-"></div>
-`,
-
-className:"",
-iconSize:[20,20]
-
-});
-
-userMarker =
-L.marker(
-[lat,lng],
-{
-icon:userIcon
-}
-)
-.addTo(map)
-.bindPopup(
-"You are here"
-);
+userMarker = L.marker([lat,lng],{
+icon:L.divIcon({
+html:`<div style="width:18px;height:18px;background:#2563eb;border-radius:50%;border:3px solid white;"></div>`,
+className:""
+})
+}).addTo(map);
 
 }
 
-userMarker.setLatLng(
-[lat,lng]
-);
+userMarker.setLatLng([lat,lng]);
 
-if(accuracyCircle){
+if(accuracyCircle) map.removeLayer(accuracyCircle);
 
-map.removeLayer(
-accuracyCircle
-);
-
-}
-
-accuracyCircle =
-L.circle(
-[lat,lng],
-{
+accuracyCircle = L.circle([lat,lng],{
 radius:accuracy,
 color:"#2563eb",
-fillColor:"#2563eb",
-fillOpacity:0.15,
-weight:1
+fillOpacity:0.1
+}).addTo(map);
+
+// geofence logic
+geofences.forEach(g => {
+
+const d = distanceMeters(lat,lng,g.lat,g.lng);
+const inside = d < g.radius;
+
+if(inside && !geofenceEnterTime[g.id]){
+
+geofenceEnterTime[g.id] = Date.now();
+
+logEvent(`Entered ${g.name}`);
+
+// show experience
+const exp = getExperience(g.id);
+if(exp){
+alert(`Experience:\n\n${exp.text}`);
 }
-).addTo(map);
-
-geofences.forEach(g=>{
-
-const d =
-distanceMeters(
-lat,
-lng,
-g.lat,
-g.lng
-);
-
-if(
-d < g.radius &&
-activeGeofence !== g.name
-){
-
-activeGeofence =
-g.name;
-
-document.getElementById("info").innerText =
-`Entered ${g.name}`;
 
 }
 
-if(
-d > g.radius &&
-activeGeofence === g.name
-){
+if(!inside && geofenceEnterTime[g.id]){
 
-activeGeofence =
-null;
+const duration = Date.now() - geofenceEnterTime[g.id];
 
-document.getElementById("info").innerText =
-`Left ${g.name}`;
+logEvent(`Left ${g.name} (Stayed ${(duration/1000/60).toFixed(1)} min)`);
 
+geofenceEnterTime[g.id] = null;
 }
 
 });
 
-map.setView(
-[lat,lng],
-15
-);
+map.setView([lat,lng],15);
 
-},
-
-(error)=>{
-
-document.getElementById("info").innerText =
-"Location unavailable";
-
+}, err => {
+document.getElementById("info").innerText = "Location error";
+});
 }
-
-);
-
-}
-
-// =====================
-// LIVE COORDINATES
-// =====================
-
-map.on(
-'mousemove',
-(e)=>{
-
-document.getElementById("coords")
-.innerText =
-`Lat: ${e.latlng.lat.toFixed(6)} | Lng: ${e.latlng.lng.toFixed(6)}`;
-
-}
-);
 
 // =====================
 // MAP CLICK
 // =====================
 
-map.on(
-'click',
-async (e)=>{
+map.on("click", async (e) => {
 
-const mode =
-prompt(
-"Type: place or geofence"
-);
+const mode = prompt("Type: place or geofence");
 
-if(!mode) return;
-
-if(
-mode.toLowerCase() ===
-"geofence"
-){
-
-createGeofence(
-e.latlng.lat,
-e.latlng.lng
-);
-
+if(mode === "geofence"){
+createGeofence(e.latlng.lat,e.latlng.lng);
 return;
-
 }
 
-const name =
-prompt(
-"Location name"
-);
-
+const name = prompt("Place name");
 if(!name) return;
 
-document.getElementById("info")
-.innerText =
-"Finding address...";
-
-const address =
-await getAddress(
-e.latlng.lat,
-e.latlng.lng
-);
-
 places.push({
-
-name:name,
+id:Date.now().toString(),
+name,
 lat:e.latlng.lat,
-lng:e.latlng.lng,
-address:address
-
+lng:e.latlng.lng
 });
 
-savePlaces();
+saveAll();
 renderPlaces();
+});
 
-document.getElementById("info")
-.innerText =
-"Saved";
+// =====================
+// FEED TOGGLE
+// =====================
 
+function showFeed(){
+const feed = document.getElementById("feed");
+feed.style.display = feed.style.display === "none" ? "block" : "none";
 }
-);
 
 // =====================
 // STARTUP
 // =====================
+
+function renderPlaces(){
+
+markers.forEach(m => map.removeLayer(m));
+markers = [];
+
+places.forEach(p => {
+
+const m = L.marker([p.lat,p.lng]).addTo(map);
+m.bindPopup(p.name);
+
+markers.push(m);
+});
+}
 
 renderPlaces();
 renderGeofences();
