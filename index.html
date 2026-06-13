@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>My Map v2</title>
+<title>My Map Clean v1</title>
 
 <link rel="icon" href="data:,">
 
@@ -17,7 +17,6 @@ height:100%;
 font-family:Arial,sans-serif;
 }
 
-/* TOP BAR */
 #topbar{
 background:#111827;
 color:white;
@@ -41,7 +40,6 @@ button:hover{
 background:#1d4ed8;
 }
 
-/* MAP */
 #map{
 height:calc(100vh - 50px);
 width:100%;
@@ -55,7 +53,7 @@ font-weight:bold;
 color:#93c5fd;
 }
 
-/* FEED (FIXED PROPERLY) */
+/* FEED PANEL */
 #feed{
 position:fixed;
 right:10px;
@@ -68,10 +66,8 @@ color:white;
 padding:10px;
 border-radius:10px;
 font-size:12px;
-z-index:9999;
-
-/* hidden state */
 display:none;
+z-index:9999;
 }
 
 .feed-item{
@@ -84,8 +80,8 @@ border-bottom:1px solid #1f2937;
 <body>
 
 <div id="topbar">
-<button onclick="trackMe()">Track Me</button>
-<button onclick="toggleFeed()" id="feedBtn">Feed</button>
+<button id="trackBtn">Track Me</button>
+<button id="feedBtn">Feed</button>
 
 <span id="info">Ready</span>
 <span id="coords">Lat: -- | Lng: --</span>
@@ -99,117 +95,73 @@ border-bottom:1px solid #1f2937;
 <script>
 
 /* =====================
-   MAP INIT
+   SAFE INIT (NO GLOBAL HTML ONCLICK)
 ===================== */
 
+document.addEventListener("DOMContentLoaded", () => {
+
+/* MAP */
 const map = L.map('map').setView([55.9533,-3.1883],13);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 attribution:'© OpenStreetMap'
 }).addTo(map);
 
-/* =====================
-   DATA
-===================== */
-
+/* STATE */
 let geofences = JSON.parse(localStorage.getItem('geofences') || '[]');
 let feed = JSON.parse(localStorage.getItem('feed') || '[]');
-
-/* =====================
-   STATE
-===================== */
 
 let userMarker = null;
 let accuracyCircle = null;
 let enterTimes = {};
 let feedOpen = false;
 
-/* =====================
-   SAVE
-===================== */
-
+/* SAVE */
 function save(){
 localStorage.setItem('geofences', JSON.stringify(geofences));
 localStorage.setItem('feed', JSON.stringify(feed));
 }
 
-/* =====================
-   FEED SYSTEM (FIXED)
-===================== */
+/* FEED */
+function renderFeed(){
+const el = document.getElementById("feed");
+el.innerHTML = feed.map(i =>
+`<div class="feed-item"><b>${i.time}</b><br>${i.text}</div>`
+).join("");
+}
 
 function addFeed(text){
-
 feed.unshift({
 text,
 time:new Date().toLocaleTimeString()
 });
-
 save();
-
-if(feedOpen){
-renderFeed();
-}
+if(feedOpen) renderFeed();
 }
 
-function renderFeed(){
+/* FEED BUTTON (FIXED RELIABILITY) */
+document.getElementById("feedBtn").addEventListener("click", () => {
 
 const el = document.getElementById("feed");
-
-el.innerHTML = feed.map(i => `
-<div class="feed-item">
-<b>${i.time}</b><br>
-${i.text}
-</div>
-`).join("");
-
-}
-
-/* =====================
-   TOGGLE FEED (100% STABLE)
-===================== */
-
-function toggleFeed(){
-
-const el = document.getElementById("feed");
-const btn = document.getElementById("feedBtn");
 
 feedOpen = !feedOpen;
 
 if(feedOpen){
 el.style.display = "block";
-btn.innerText = "Close Feed";
 renderFeed();
 } else {
 el.style.display = "none";
-btn.innerText = "Feed";
 }
 
+});
+
+/* TRACK BUTTON */
+document.getElementById("trackBtn").addEventListener("click", () => {
+
+if(!navigator.geolocation){
+alert("Geolocation not supported");
+return;
 }
-
-/* =====================
-   DISTANCE
-===================== */
-
-function distanceMeters(lat1,lng1,lat2,lng2){
-
-const R = 6371000;
-const dLat = (lat2-lat1)*Math.PI/180;
-const dLng = (lng2-lng1)*Math.PI/180;
-
-const a =
-Math.sin(dLat/2)**2 +
-Math.cos(lat1*Math.PI/180) *
-Math.cos(lat2*Math.PI/180) *
-Math.sin(dLng/2)**2;
-
-return R * 2 * Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
-
-/* =====================
-   TRACKING
-===================== */
-
-function trackMe(){
 
 navigator.geolocation.watchPosition(pos => {
 
@@ -217,14 +169,14 @@ const lat = pos.coords.latitude;
 const lng = pos.coords.longitude;
 const accuracy = pos.coords.accuracy;
 
-/* user marker */
+/* USER MARKER */
 if(!userMarker){
 userMarker = L.marker([lat,lng]).addTo(map);
 }
 
 userMarker.setLatLng([lat,lng]);
 
-/* accuracy circle */
+/* ACCURACY */
 if(accuracyCircle) map.removeLayer(accuracyCircle);
 
 accuracyCircle = L.circle([lat,lng],{
@@ -233,20 +185,31 @@ color:"#2563eb",
 fillOpacity:0.1
 }).addTo(map);
 
-/* geofence check */
+/* GEOFENCE CHECK */
 geofences.forEach(g => {
 
-const d = distanceMeters(lat,lng,g.lat,g.lng);
+const R = 6371000;
+const dLat = (g.lat-lat)*Math.PI/180;
+const dLng = (g.lng-lng)*Math.PI/180;
+
+const a =
+Math.sin(dLat/2)**2 +
+Math.cos(lat*Math.PI/180) *
+Math.cos(g.lat*Math.PI/180) *
+Math.sin(dLng/2)**2;
+
+const d = R * 2 * Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+
 const inside = d < g.radius;
 
 if(inside && !enterTimes[g.id]){
 enterTimes[g.id] = Date.now();
-addFeed(`Entered ${g.name}`);
+addFeed("Entered " + g.name);
 }
 
 if(!inside && enterTimes[g.id]){
 const mins = ((Date.now()-enterTimes[g.id])/60000).toFixed(1);
-addFeed(`Left ${g.name} (${mins} min)`);
+addFeed("Left " + g.name + " (" + mins + " min)");
 enterTimes[g.id] = null;
 }
 
@@ -255,20 +218,13 @@ enterTimes[g.id] = null;
 map.setView([lat,lng],15);
 
 }, err => {
-alert("Location error or permission denied");
+alert("Location error");
 });
 
-}
+});
 
-/* =====================
-   GEOFENCE CREATION
-===================== */
-
-map.on("click",(e)=>{
-
-const mode = prompt("Type: geofence or cancel");
-
-if(mode === "geofence"){
+/* MAP CLICK = CREATE GEOFENCE */
+map.on("click", (e) => {
 
 const name = prompt("Geofence name");
 if(!name) return;
@@ -287,15 +243,13 @@ radius
 save();
 
 alert("Geofence created");
-}
 
 });
 
-/* =====================
-   INIT
-===================== */
-
+/* INIT */
 renderFeed();
+
+}); // DOM READY END
 
 </script>
 
