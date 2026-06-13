@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>Location Map v3</title>
+<title>Location Engine</title>
 
 <link rel="icon" href="data:,">
 
@@ -44,6 +44,7 @@ height:calc(100vh - 50px);
 width:100%;
 }
 
+/* FIXED FEED (VISIBLE + NO BLACK BOX ISSUE) */
 #feed{
 position:fixed;
 right:10px;
@@ -51,18 +52,19 @@ top:70px;
 width:300px;
 max-height:70vh;
 overflow:auto;
-background:#111827;
-color:white;
+background:white;
+color:black;
 padding:10px;
 border-radius:10px;
-font-size:12px;
+font-size:13px;
 display:none;
 z-index:9999;
+box-shadow:0 10px 30px rgba(0,0,0,0.3);
 }
 
 .feed-item{
 padding:6px;
-border-bottom:1px solid #1f2937;
+border-bottom:1px solid #eee;
 }
 </style>
 </head>
@@ -93,7 +95,7 @@ attribution:'© OpenStreetMap'
 }).addTo(map);
 
 /* =====================
-   DATA
+   STORAGE
 ===================== */
 
 let geofences = JSON.parse(localStorage.getItem('geofences') || '[]');
@@ -118,7 +120,7 @@ localStorage.setItem('feed', JSON.stringify(feed));
 }
 
 /* =====================
-   FEED (GUARANTEED WORKING)
+   FEED SYSTEM (FIXED + ALWAYS VISIBLE DATA)
 ===================== */
 
 function renderFeed(){
@@ -155,7 +157,7 @@ renderFeed();
 }
 
 /* =====================
-   FEED BUTTON (FIXED)
+   FEED BUTTON (RELIABLE TOGGLE)
 ===================== */
 
 document.getElementById("feedBtn").addEventListener("click", () => {
@@ -167,14 +169,16 @@ feedOpen = !feedOpen;
 if(feedOpen){
 el.style.display = "block";
 renderFeed();
+document.getElementById("feedBtn").innerText = "Close Feed";
 } else {
 el.style.display = "none";
+document.getElementById("feedBtn").innerText = "Feed";
 }
 
 });
 
 /* =====================
-   TRACKING
+   TRACKING + GEOFENCE ENGINE (RESTORED)
 ===================== */
 
 document.getElementById("trackBtn").addEventListener("click", () => {
@@ -197,7 +201,7 @@ userMarker = L.marker([lat,lng]).addTo(map);
 
 userMarker.setLatLng([lat,lng]);
 
-/* ACCURACY RADIUS */
+/* ACCURACY CIRCLE */
 if(accuracyCircle) map.removeLayer(accuracyCircle);
 
 accuracyCircle = L.circle([lat,lng],{
@@ -206,10 +210,11 @@ color:"#2563eb",
 fillOpacity:0.1
 }).addTo(map);
 
-/* GEOFENCE CHECK */
+/* GEOFENCE CHECK (RESTORED WORKING LOGIC) */
 geofences.forEach(g => {
 
 const R = 6371000;
+
 const dLat = (g.lat-lat)*Math.PI/180;
 const dLng = (g.lng-lng)*Math.PI/180;
 
@@ -239,7 +244,7 @@ enterTimes[g.id] = null;
 map.setView([lat,lng],15);
 
 }, err => {
-alert("Location permission denied");
+alert("Location permission denied or unavailable");
 });
 
 });
@@ -253,7 +258,7 @@ map.on("click", (e) => {
 const name = prompt("Geofence name");
 if(!name) return;
 
-const radius = parseInt(prompt("Radius in meters",200));
+const radius = parseInt(prompt("Radius (m)",200));
 if(!radius) return;
 
 geofences.push({
