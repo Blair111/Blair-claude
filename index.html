@@ -4,17 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>Location Engine</title>
+<title>Geofence Map FIXED</title>
 
 <link rel="icon" href="data:,">
-
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
 html,body{
 margin:0;
 height:100%;
-font-family:Arial,sans-serif;
+font-family:Arial;
 }
 
 #topbar{
@@ -28,15 +27,11 @@ align-items:center;
 
 button{
 padding:8px 12px;
-border:none;
+border:0;
 border-radius:6px;
 background:#2563eb;
 color:white;
 cursor:pointer;
-}
-
-button:hover{
-background:#1d4ed8;
 }
 
 #map{
@@ -44,27 +39,25 @@ height:calc(100vh - 50px);
 width:100%;
 }
 
-/* FIXED FEED (VISIBLE + NO BLACK BOX ISSUE) */
 #feed{
 position:fixed;
 right:10px;
 top:70px;
-width:300px;
+width:280px;
 max-height:70vh;
 overflow:auto;
 background:white;
 color:black;
 padding:10px;
-border-radius:10px;
-font-size:13px;
+border:1px solid #ccc;
 display:none;
 z-index:9999;
-box-shadow:0 10px 30px rgba(0,0,0,0.3);
 }
 
-.feed-item{
-padding:6px;
+.item{
+padding:5px;
 border-bottom:1px solid #eee;
+font-size:13px;
 }
 </style>
 </head>
@@ -72,7 +65,7 @@ border-bottom:1px solid #eee;
 <body>
 
 <div id="topbar">
-<button id="trackBtn">Track Me</button>
+<button id="trackBtn">Track</button>
 <button id="feedBtn">Feed</button>
 <span id="info">Ready</span>
 </div>
@@ -84,176 +77,141 @@ border-bottom:1px solid #eee;
 
 <script>
 
-/* =====================
-   MAP INIT
-===================== */
+console.log("SCRIPT LOADED OK");
 
 const map = L.map('map').setView([55.9533,-3.1883],13);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-attribution:'© OpenStreetMap'
+attribution:'© OSM'
 }).addTo(map);
 
-/* =====================
-   STORAGE
-===================== */
-
-let geofences = JSON.parse(localStorage.getItem('geofences') || '[]');
-let feed = JSON.parse(localStorage.getItem('feed') || '[]');
-
-/* =====================
-   STATE
-===================== */
-
+/* STATE */
+let geofences = [];
+let feed = [];
+let enter = {};
+let open = false;
 let userMarker = null;
-let accuracyCircle = null;
-let enterTimes = {};
-let feedOpen = false;
+let circles = [];
 
 /* =====================
-   SAVE
-===================== */
-
-function save(){
-localStorage.setItem('geofences', JSON.stringify(geofences));
-localStorage.setItem('feed', JSON.stringify(feed));
-}
-
-/* =====================
-   FEED SYSTEM (FIXED + ALWAYS VISIBLE DATA)
+   FEED
 ===================== */
 
 function renderFeed(){
-
-const el = document.getElementById("feed");
+const f = document.getElementById("feed");
 
 if(feed.length === 0){
-el.innerHTML = "<div class='feed-item'>No activity yet</div>";
+f.innerHTML = "<div class='item'>No activity yet</div>";
 return;
 }
 
-el.innerHTML = feed.map(i => `
-<div class="feed-item">
-<b>${i.time}</b><br>
-${i.text}
-</div>
-`).join("");
-
+f.innerHTML = feed.map(x =>
+`<div class='item'><b>${x.t}</b><br>${x.m}</div>`
+).join("");
 }
 
-function addFeed(text){
-
-feed.unshift({
-text,
-time:new Date().toLocaleTimeString()
-});
-
-save();
-
-if(feedOpen){
+function addFeed(msg){
+feed.unshift({t:new Date().toLocaleTimeString(), m:msg});
 renderFeed();
 }
+
+/* FEED BUTTON */
+document.getElementById("feedBtn").onclick = () => {
+const f = document.getElementById("feed");
+open = !open;
+f.style.display = open ? "block" : "none";
+renderFeed();
+};
+
+/* =====================
+   SHOW GEOFENCES (IMPORTANT FIX)
+===================== */
+
+function drawGeofences(){
+
+circles.forEach(c => map.removeLayer(c));
+circles = [];
+
+geofences.forEach(g => {
+
+const circle = L.circle([g.lat,g.lng],{
+radius:g.r,
+color:"orange",
+fillColor:"orange",
+fillOpacity:0.2
+}).addTo(map);
+
+circles.push(circle);
+
+});
 
 }
 
 /* =====================
-   FEED BUTTON (RELIABLE TOGGLE)
+   DISTANCE
 ===================== */
 
-document.getElementById("feedBtn").addEventListener("click", () => {
+function dist(a,b,c,d){
+const R=6371000;
+const dLat=(c-a)*Math.PI/180;
+const dLng=(d-b)*Math.PI/180;
 
-const el = document.getElementById("feed");
+const x=
+Math.sin(dLat/2)**2+
+Math.cos(a*Math.PI/180)*
+Math.cos(c*Math.PI/180)*
+Math.sin(dLng/2)**2;
 
-feedOpen = !feedOpen;
-
-if(feedOpen){
-el.style.display = "block";
-renderFeed();
-document.getElementById("feedBtn").innerText = "Close Feed";
-} else {
-el.style.display = "none";
-document.getElementById("feedBtn").innerText = "Feed";
+return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
-
-});
 
 /* =====================
-   TRACKING + GEOFENCE ENGINE (RESTORED)
+   TRACKING
 ===================== */
 
-document.getElementById("trackBtn").addEventListener("click", () => {
+document.getElementById("trackBtn").onclick = () => {
 
-if(!navigator.geolocation){
-alert("Geolocation not supported");
-return;
-}
+navigator.geolocation.watchPosition(p => {
 
-navigator.geolocation.watchPosition(pos => {
+const lat=p.coords.latitude;
+const lng=p.coords.longitude;
 
-const lat = pos.coords.latitude;
-const lng = pos.coords.longitude;
-const accuracy = pos.coords.accuracy;
-
-/* USER MARKER */
+/* user marker */
 if(!userMarker){
-userMarker = L.marker([lat,lng]).addTo(map);
+userMarker=L.marker([lat,lng]).addTo(map);
 }
 
 userMarker.setLatLng([lat,lng]);
 
-/* ACCURACY CIRCLE */
-if(accuracyCircle) map.removeLayer(accuracyCircle);
-
-accuracyCircle = L.circle([lat,lng],{
-radius:accuracy,
-color:"#2563eb",
-fillOpacity:0.1
-}).addTo(map);
-
-/* GEOFENCE CHECK (RESTORED WORKING LOGIC) */
+/* geofence check */
 geofences.forEach(g => {
 
-const R = 6371000;
+const d = dist(lat,lng,g.lat,g.lng);
+const inside = d < g.r;
 
-const dLat = (g.lat-lat)*Math.PI/180;
-const dLng = (g.lng-lng)*Math.PI/180;
-
-const a =
-Math.sin(dLat/2)**2 +
-Math.cos(lat*Math.PI/180) *
-Math.cos(g.lat*Math.PI/180) *
-Math.sin(dLng/2)**2;
-
-const d = R * 2 * Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-
-const inside = d < g.radius;
-
-if(inside && !enterTimes[g.id]){
-enterTimes[g.id] = Date.now();
-addFeed("Entered " + g.name);
+if(inside && !enter[g.id]){
+enter[g.id]=true;
+addFeed("Entered " + g.n);
 }
 
-if(!inside && enterTimes[g.id]){
-const mins = ((Date.now()-enterTimes[g.id])/60000).toFixed(1);
-addFeed("Left " + g.name + " (" + mins + " min)");
-enterTimes[g.id] = null;
+if(!inside && enter[g.id]){
+enter[g.id]=false;
+addFeed("Left " + g.n);
 }
 
 });
 
 map.setView([lat,lng],15);
 
-}, err => {
-alert("Location permission denied or unavailable");
-});
+}, err => alert("Location error"));
 
-});
+};
 
 /* =====================
    CREATE GEOFENCE
 ===================== */
 
-map.on("click", (e) => {
+map.on("click", e => {
 
 const name = prompt("Geofence name");
 if(!name) return;
@@ -263,22 +221,20 @@ if(!radius) return;
 
 geofences.push({
 id:Date.now(),
-name,
+n:name,
 lat:e.latlng.lat,
 lng:e.latlng.lng,
-radius
+r:radius
 });
 
-save();
+/* 🔥 FIX: actually draw it */
+drawGeofences();
 
 alert("Geofence created");
 
 });
 
-/* =====================
-   INIT
-===================== */
-
+/* INIT */
 renderFeed();
 
 </script>
