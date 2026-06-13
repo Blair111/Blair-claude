@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>Geofence Map FIXED</title>
+<title>Location System Stable</title>
 
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
@@ -39,25 +39,24 @@ height:calc(100vh - 50px);
 width:100%;
 }
 
-#feed{
+#panel{
 position:fixed;
 right:10px;
 top:70px;
-width:280px;
+width:300px;
 max-height:70vh;
 overflow:auto;
 background:white;
 color:black;
 padding:10px;
-border:1px solid #ccc;
-display:none;
+border:1px solid #ddd;
+font-size:13px;
 z-index:9999;
 }
 
 .item{
-padding:5px;
+padding:6px;
 border-bottom:1px solid #eee;
-font-size:13px;
 }
 </style>
 </head>
@@ -66,176 +65,250 @@ font-size:13px;
 
 <div id="topbar">
 <button id="trackBtn">Track</button>
-<button id="feedBtn">Feed</button>
-<span id="info">Ready</span>
+<span id="status">Ready</span>
 </div>
 
 <div id="map"></div>
-<div id="feed"></div>
+<div id="panel"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-console.log("SCRIPT LOADED OK");
+/* =========================
+   MAP INIT
+========================= */
 
 const map = L.map('map').setView([55.9533,-3.1883],13);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-attribution:'© OSM'
+attribution:'© OpenStreetMap'
 }).addTo(map);
 
-/* STATE */
-let geofences = [];
-let feed = [];
-let enter = {};
-let open = false;
+/* =========================
+   STORAGE (RESTORED)
+========================= */
+
+let places = JSON.parse(localStorage.getItem("places") || "[]");
+let geofences = JSON.parse(localStorage.getItem("geofences") || "[]");
+let feed = JSON.parse(localStorage.getItem("feed") || "[]");
+
+/* =========================
+   STATE
+========================= */
+
 let userMarker = null;
-let circles = [];
+let accuracyCircle = null;
+let enterState = {};
+let geofenceLayers = [];
 
-/* =====================
+/* =========================
+   SAVE
+========================= */
+
+function save(){
+localStorage.setItem("places", JSON.stringify(places));
+localStorage.setItem("geofences", JSON.stringify(geofences));
+localStorage.setItem("feed", JSON.stringify(feed));
+}
+
+/* =========================
+   PANEL (FEED + LISTS)
+========================= */
+
+function renderPanel(){
+
+const el = document.getElementById("panel");
+
+el.innerHTML = `
+
+<div class="item"><b>Feed</b></div>
+
+${feed.length === 0 ? `<div class="item">No activity yet</div>` :
+feed.map(f => `
+<div class="item">
+<b>${f.time}</b><br>${f.text}
+</div>
+`).join("")
+}
+
+<div class="item"><b>Saved Locations</b></div>
+
+${places.length === 0 ? `<div class="item">None</div>` :
+places.map(p => `
+<div class="item">${p.name}</div>
+`).join("")
+}
+
+<div class="item"><b>Geofences</b></div>
+
+${geofences.length === 0 ? `<div class="item">None</div>` :
+geofences.map(g => `
+<div class="item">${g.name} (${g.radius}m)</div>
+`).join("")
+}
+
+`;
+
+}
+
+/* =========================
    FEED
-===================== */
-
-function renderFeed(){
-const f = document.getElementById("feed");
-
-if(feed.length === 0){
-f.innerHTML = "<div class='item'>No activity yet</div>";
-return;
-}
-
-f.innerHTML = feed.map(x =>
-`<div class='item'><b>${x.t}</b><br>${x.m}</div>`
-).join("");
-}
+========================= */
 
 function addFeed(msg){
-feed.unshift({t:new Date().toLocaleTimeString(), m:msg});
-renderFeed();
+
+feed.unshift({
+text:msg,
+time:new Date().toLocaleTimeString()
+});
+
+save();
+renderPanel();
+
 }
 
-/* FEED BUTTON */
-document.getElementById("feedBtn").onclick = () => {
-const f = document.getElementById("feed");
-open = !open;
-f.style.display = open ? "block" : "none";
-renderFeed();
-};
+/* =========================
+   DISTANCE
+========================= */
 
-/* =====================
-   SHOW GEOFENCES (IMPORTANT FIX)
-===================== */
+function distance(a,b,c,d){
+
+const R = 6371000;
+
+const dLat = (c-a)*Math.PI/180;
+const dLng = (d-b)*Math.PI/180;
+
+const x =
+Math.sin(dLat/2)**2 +
+Math.cos(a*Math.PI/180) *
+Math.cos(c*Math.PI/180) *
+Math.sin(dLng/2)**2;
+
+return R * 2 * Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+/* =========================
+   DRAW GEOFENCES (CRITICAL FIX)
+========================= */
 
 function drawGeofences(){
 
-circles.forEach(c => map.removeLayer(c));
-circles = [];
+geofenceLayers.forEach(l => map.removeLayer(l));
+geofenceLayers = [];
 
 geofences.forEach(g => {
 
 const circle = L.circle([g.lat,g.lng],{
-radius:g.r,
+radius:g.radius,
 color:"orange",
-fillColor:"orange",
 fillOpacity:0.2
 }).addTo(map);
 
-circles.push(circle);
+geofenceLayers.push(circle);
 
 });
 
 }
 
-/* =====================
-   DISTANCE
-===================== */
-
-function dist(a,b,c,d){
-const R=6371000;
-const dLat=(c-a)*Math.PI/180;
-const dLng=(d-b)*Math.PI/180;
-
-const x=
-Math.sin(dLat/2)**2+
-Math.cos(a*Math.PI/180)*
-Math.cos(c*Math.PI/180)*
-Math.sin(dLng/2)**2;
-
-return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-/* =====================
+/* =========================
    TRACKING
-===================== */
+========================= */
 
 document.getElementById("trackBtn").onclick = () => {
 
-navigator.geolocation.watchPosition(p => {
+navigator.geolocation.watchPosition(pos => {
 
-const lat=p.coords.latitude;
-const lng=p.coords.longitude;
+const lat = pos.coords.latitude;
+const lng = pos.coords.longitude;
+const acc = pos.coords.accuracy;
 
-/* user marker */
 if(!userMarker){
-userMarker=L.marker([lat,lng]).addTo(map);
+userMarker = L.marker([lat,lng]).addTo(map);
 }
 
 userMarker.setLatLng([lat,lng]);
 
-/* geofence check */
+if(accuracyCircle) map.removeLayer(accuracyCircle);
+
+accuracyCircle = L.circle([lat,lng],{
+radius:acc,
+color:"#2563eb",
+fillOpacity:0.1
+}).addTo(map);
+
+/* geofence logic */
 geofences.forEach(g => {
 
-const d = dist(lat,lng,g.lat,g.lng);
-const inside = d < g.r;
+const d = distance(lat,lng,g.lat,g.lng);
+const inside = d < g.radius;
 
-if(inside && !enter[g.id]){
-enter[g.id]=true;
-addFeed("Entered " + g.n);
+if(inside && !enterState[g.id]){
+enterState[g.id] = true;
+addFeed("Entered " + g.name);
 }
 
-if(!inside && enter[g.id]){
-enter[g.id]=false;
-addFeed("Left " + g.n);
+if(!inside && enterState[g.id]){
+enterState[g.id] = false;
+addFeed("Left " + g.name);
 }
 
 });
 
 map.setView([lat,lng],15);
 
-}, err => alert("Location error"));
+}, err => alert("Location blocked"));
 
 };
 
-/* =====================
-   CREATE GEOFENCE
-===================== */
+/* =========================
+   MAP CLICK (RESTORED)
+========================= */
 
 map.on("click", e => {
 
-const name = prompt("Geofence name");
-if(!name) return;
+const mode = prompt("Type: place or geofence");
 
+if(mode === "geofence"){
+
+const name = prompt("Geofence name");
 const radius = parseInt(prompt("Radius (m)",200));
-if(!radius) return;
 
 geofences.push({
 id:Date.now(),
-n:name,
+name,
 lat:e.latlng.lat,
 lng:e.latlng.lng,
-r:radius
+radius
 });
 
-/* 🔥 FIX: actually draw it */
 drawGeofences();
+save();
+renderPanel();
 
-alert("Geofence created");
+return;
+}
+
+const name = prompt("Place name");
+if(!name) return;
+
+places.push({
+name,
+lat:e.latlng.lat,
+lng:e.latlng.lng
+});
+
+save();
+renderPanel();
 
 });
 
-/* INIT */
-renderFeed();
+/* =========================
+   INIT
+========================= */
+
+drawGeofences();
+renderPanel();
 
 </script>
 
