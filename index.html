@@ -1,3 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>GeoSocial Stable</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
+
+<style>
+html,body{
+margin:0;
+height:100%;
+font-family:Arial;
+}
+
+#wrap{
+display:flex;
+height:100vh;
+}
+
+#sidebar{
+width:320px;
+background:#111827;
+color:white;
+padding:10px;
+overflow:auto;
+}
+
+#map{
+flex:1;
+}
+
+.card{
+background:#1f2937;
+padding:10px;
+margin-bottom:10px;
+border-radius:8px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="wrap">
+<div id="sidebar"></div>
+<div id="map"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+
 /* ================= MAP ================= */
 
 const map = L.map('map').setView([55.9533,-3.1883],13);
@@ -8,109 +61,106 @@ attribution:'© OpenStreetMap'
 
 /* ================= DATA ================= */
 
-let places = JSON.parse(localStorage.getItem("places")||"[]");
-let geofences = JSON.parse(localStorage.getItem("geofences")||"[]");
-let feed = JSON.parse(localStorage.getItem("feed")||"[]");
-let insideState = JSON.parse(localStorage.getItem("insideState")||"{}");
+let places = JSON.parse(localStorage.getItem("places") || "[]");
+let geofences = JSON.parse(localStorage.getItem("geofences") || "[]");
+let feed = JSON.parse(localStorage.getItem("feed") || "[]");
+let inside = JSON.parse(localStorage.getItem("inside") || "{}");
 
-/* ================= LAYERS ================= */
+/* ================= STATE ================= */
 
-let placeMarkers=[];
-let fenceLayers=[];
-let userMarker=null;
-let accuracyCircle=null;
-
-/* ================= NOTIFICATIONS ================= */
-
-function enableNotifications(){
-if(!("Notification" in window)) return;
-
-if(Notification.permission==="default"){
-Notification.requestPermission();
-}
-}
-
-enableNotifications();
-
-function notify(title,body){
-if(Notification.permission!=="granted") return;
-new Notification(title,{body});
-}
+let userMarker = null;
+let accuracyCircle = null;
+let geoWatch = null;
 
 /* ================= SAVE ================= */
 
 function save(){
-localStorage.setItem("places",JSON.stringify(places));
-localStorage.setItem("geofences",JSON.stringify(geofences));
-localStorage.setItem("feed",JSON.stringify(feed));
-localStorage.setItem("insideState",JSON.stringify(insideState));
+localStorage.setItem("places", JSON.stringify(places));
+localStorage.setItem("geofences", JSON.stringify(geofences));
+localStorage.setItem("feed", JSON.stringify(feed));
+localStorage.setItem("inside", JSON.stringify(inside));
 }
 
 /* ================= DISTANCE ================= */
 
-function distance(lat1,lng1,lat2,lng2){
-const R=6371000;
+function dist(lat1,lng1,lat2,lng2){
+const R = 6371000;
+const dLat = (lat2-lat1)*Math.PI/180;
+const dLng = (lng2-lng1)*Math.PI/180;
 
-const dLat=(lat2-lat1)*Math.PI/180;
-const dLng=(lng2-lng1)*Math.PI/180;
-
-const a=
-Math.sin(dLat/2)**2+
-Math.cos(lat1*Math.PI/180)*
-Math.cos(lat2*Math.PI/180)*
+const a =
+Math.sin(dLat/2)**2 +
+Math.cos(lat1*Math.PI/180) *
+Math.cos(lat2*Math.PI/180) *
 Math.sin(dLng/2)**2;
 
-return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
 /* ================= FEED ================= */
 
-function addFeed(type,text){
+function addFeed(text,type){
 
 feed.unshift({
 time:new Date().toLocaleTimeString(),
-type,
-text
+text,
+type
 });
 
-if(feed.length>80) feed.pop();
+if(feed.length>50) feed.pop();
 
 save();
 render();
 }
 
+/* ================= NOTIFY ================= */
+
+function notify(title,body){
+if(!("Notification" in window)) return;
+if(Notification.permission !== "granted") return;
+
+new Notification(title,{body});
+}
+
 /* ================= DRAW ================= */
 
-function drawPlaces(){
+function draw(){
 
-placeMarkers.forEach(m=>map.removeLayer(m));
-placeMarkers=[];
+const el = document.getElementById("sidebar");
 
-places.forEach(p=>{
-const m=L.marker([p.lat,p.lng]).addTo(map);
-m.bindPopup(p.name);
-placeMarkers.push(m);
-});
+let html = "";
+
+/* FEED */
+html += `<div class="card"><b>LIVE FEED</b>`;
+
+if(feed.length===0){
+html += `<div>No activity yet</div>`;
+}else{
+for(let f of feed){
+html += `
+<div>
+<b>${f.type}</b><br>
+${f.text}<br>
+<small>${f.time}</small>
+</div><hr>`;
+}
 }
 
-function drawGeofences(){
+html += `</div>`;
 
-fenceLayers.forEach(f=>map.removeLayer(f));
-fenceLayers=[];
+/* GEOFENCES */
+html += `<div class="card"><b>GEOFENCES</b>`;
 
-geofences.forEach(g=>{
-const c=L.circle([g.lat,g.lng],{
-radius:g.radius,
-color:"orange",
-fillOpacity:0.2
-}).addTo(map);
-
-c.bindPopup(g.name);
-fenceLayers.push(c);
-});
+for(let g of geofences){
+html += `<div>${g.name} (${g.radius}m)</div>`;
 }
 
-/* ================= TRACKING ================= */
+html += `</div>`;
+
+el.innerHTML = html;
+}
+
+/* ================= START ================= */
 
 function startTracking(){
 
@@ -119,54 +169,55 @@ alert("No GPS");
 return;
 }
 
-navigator.geolocation.watchPosition(pos=>{
+if(Notification.permission==="default"){
+Notification.requestPermission();
+}
 
-const lat=pos.coords.latitude;
-const lng=pos.coords.longitude;
-const acc=pos.coords.accuracy;
+geoWatch = navigator.geolocation.watchPosition(pos=>{
+
+const lat = pos.coords.latitude;
+const lng = pos.coords.longitude;
+const acc = pos.coords.accuracy;
 
 if(!userMarker){
-userMarker=L.marker([lat,lng]).addTo(map);
+userMarker = L.marker([lat,lng]).addTo(map);
 }
 
 userMarker.setLatLng([lat,lng]);
 
-if(accuracyCircle) map.removeLayer(accuracyCircle);
+if(accuracyCircle){
+map.removeLayer(accuracyCircle);
+}
 
-accuracyCircle=L.circle([lat,lng],{
+accuracyCircle = L.circle([lat,lng],{
 radius:acc,
 color:"#3b82f6",
 fillOpacity:0.1
 }).addTo(map);
 
-/* ================= GEOFENCE ENGINE ================= */
+/* GEOFENCE ENGINE */
+for(let g of geofences){
 
-geofences.forEach(g=>{
-
-const d=distance(lat,lng,g.lat,g.lng);
-const inside=d<g.radius;
+const d = dist(lat,lng,g.lat,g.lng);
+const insideNow = d < g.radius;
 
 /* ENTER */
-if(inside && !insideState[g.id]){
+if(insideNow && !inside[g.id]){
+inside[g.id] = true;
 
-insideState[g.id]=true;
-
-addFeed("ENTER","Entered "+g.name);
+addFeed("Entered "+g.name,"ENTER");
 notify("Entered zone",g.name);
-
 }
 
 /* EXIT */
-if(!inside && insideState[g.id]){
+if(!insideNow && inside[g.id]){
+inside[g.id] = false;
 
-insideState[g.id]=false;
-
-addFeed("EXIT","Left "+g.name);
+addFeed("Left "+g.name,"EXIT");
 notify("Exited zone",g.name);
-
 }
 
-});
+}
 
 map.setView([lat,lng],15);
 
@@ -181,11 +232,10 @@ alert("Location blocked");
 
 map.on("click",e=>{
 
-const type=prompt("place or geofence");
-if(!type)return;
+const type = prompt("place or geofence");
+if(!type) return;
 
 if(type==="place"){
-
 places.push({
 id:Date.now(),
 name:prompt("name"),
@@ -194,8 +244,7 @@ lng:e.latlng.lng
 });
 
 save();
-drawPlaces();
-render();
+draw();
 return;
 }
 
@@ -208,53 +257,15 @@ radius:200
 });
 
 save();
-drawGeofences();
-render();
+draw();
 
 });
-
-/* ================= SIDEBAR ================= */
-
-function render(){
-
-const s=document.getElementById("sidebar");
-
-let html="";
-
-/* FEED */
-html+="<div><b>LIVE FEED</b></div>";
-
-if(feed.length===0){
-html+="<div>No activity yet</div>";
-}else{
-feed.forEach(f=>{
-html+=`
-<div>
-<b>${f.type}</b><br>
-<small>${f.time}</small><br>
-${f.text}
-</div><hr>
-`;
-});
-}
-
-/* PLACES */
-html+="<div><b>PLACES</b></div>";
-places.forEach(p=>{
-html+=`<div>${p.name}</div>`;
-});
-
-/* GEOFENCES */
-html+="<div><b>GEOFENCES</b></div>";
-geofences.forEach(g=>{
-html+=`<div>${g.name} (${g.radius}m)</div>`;
-});
-
-s.innerHTML=html;
-}
 
 /* ================= INIT ================= */
 
-drawPlaces();
-drawGeofences();
-render();
+draw();
+
+</script>
+
+</body>
+</html>
