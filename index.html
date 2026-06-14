@@ -1,73 +1,3 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GeoSocial SAFE RESET</title>
-
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
-
-<style>
-html,body{
-margin:0;
-height:100%;
-font-family:Arial;
-}
-
-#container{
-display:flex;
-height:100vh;
-}
-
-#sidebar{
-width:320px;
-background:#111827;
-color:white;
-padding:10px;
-overflow:auto;
-}
-
-#map{
-flex:1;
-}
-
-.card{
-background:#1f2937;
-padding:10px;
-margin-bottom:10px;
-border-radius:10px;
-}
-
-button{
-padding:6px 10px;
-border:none;
-background:#2563eb;
-color:white;
-border-radius:6px;
-cursor:pointer;
-margin-top:6px;
-}
-
-.item{
-background:#374151;
-padding:6px;
-margin-top:6px;
-border-radius:6px;
-}
-</style>
-</head>
-
-<body>
-
-<div id="container">
-<div id="sidebar"></div>
-<div id="map"></div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-
-<script>
-
 /* ================= MAP ================= */
 
 const map = L.map('map').setView([55.9533,-3.1883],13);
@@ -78,101 +8,187 @@ attribution:'© OpenStreetMap'
 
 /* ================= DATA ================= */
 
-let places = JSON.parse(localStorage.getItem("places") || "[]");
-let geofences = JSON.parse(localStorage.getItem("geofences") || "[]");
+let places = JSON.parse(localStorage.getItem("places")||"[]");
+let geofences = JSON.parse(localStorage.getItem("geofences")||"[]");
+let feed = JSON.parse(localStorage.getItem("feed")||"[]");
+let insideState = JSON.parse(localStorage.getItem("insideState")||"{}");
 
 /* ================= LAYERS ================= */
 
-let placeMarkers = [];
-let fenceLayers = [];
+let placeMarkers=[];
+let fenceLayers=[];
+let userMarker=null;
+let accuracyCircle=null;
+
+/* ================= NOTIFICATIONS ================= */
+
+function enableNotifications(){
+if(!("Notification" in window)) return;
+
+if(Notification.permission==="default"){
+Notification.requestPermission();
+}
+}
+
+enableNotifications();
+
+function notify(title,body){
+if(Notification.permission!=="granted") return;
+new Notification(title,{body});
+}
 
 /* ================= SAVE ================= */
 
 function save(){
-localStorage.setItem("places", JSON.stringify(places));
-localStorage.setItem("geofences", JSON.stringify(geofences));
+localStorage.setItem("places",JSON.stringify(places));
+localStorage.setItem("geofences",JSON.stringify(geofences));
+localStorage.setItem("feed",JSON.stringify(feed));
+localStorage.setItem("insideState",JSON.stringify(insideState));
 }
 
-/* ================= DRAW PLACES ================= */
+/* ================= DISTANCE ================= */
+
+function distance(lat1,lng1,lat2,lng2){
+const R=6371000;
+
+const dLat=(lat2-lat1)*Math.PI/180;
+const dLng=(lng2-lng1)*Math.PI/180;
+
+const a=
+Math.sin(dLat/2)**2+
+Math.cos(lat1*Math.PI/180)*
+Math.cos(lat2*Math.PI/180)*
+Math.sin(dLng/2)**2;
+
+return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+/* ================= FEED ================= */
+
+function addFeed(type,text){
+
+feed.unshift({
+time:new Date().toLocaleTimeString(),
+type,
+text
+});
+
+if(feed.length>80) feed.pop();
+
+save();
+render();
+}
+
+/* ================= DRAW ================= */
 
 function drawPlaces(){
 
-placeMarkers.forEach(m => map.removeLayer(m));
-placeMarkers = [];
+placeMarkers.forEach(m=>map.removeLayer(m));
+placeMarkers=[];
 
-for(let i=0;i<places.length;i++){
-let p = places[i];
-
-let m = L.marker([p.lat,p.lng]).addTo(map);
+places.forEach(p=>{
+const m=L.marker([p.lat,p.lng]).addTo(map);
 m.bindPopup(p.name);
-
 placeMarkers.push(m);
+});
 }
-}
-
-/* ================= DRAW GEOFENCES ================= */
 
 function drawGeofences(){
 
-fenceLayers.forEach(f => map.removeLayer(f));
-fenceLayers = [];
+fenceLayers.forEach(f=>map.removeLayer(f));
+fenceLayers=[];
 
-for(let i=0;i<geofences.length;i++){
-let g = geofences[i];
-
-let c = L.circle([g.lat,g.lng],{
+geofences.forEach(g=>{
+const c=L.circle([g.lat,g.lng],{
 radius:g.radius,
 color:"orange",
 fillOpacity:0.2
 }).addTo(map);
 
 c.bindPopup(g.name);
-
 fenceLayers.push(c);
-}
-}
-
-/* ================= SIDEBAR ================= */
-
-function render(){
-
-let el = document.getElementById("sidebar");
-
-let html = "";
-
-html += "<div class='card'><b>PLACES</b>";
-
-for(let i=0;i<places.length;i++){
-html += "<div class='item'>" + places[i].name + "</div>";
+});
 }
 
-html += "</div>";
+/* ================= TRACKING ================= */
 
-html += "<div class='card'><b>GEOFENCES</b>";
+function startTracking(){
 
-for(let i=0;i<geofences.length;i++){
-html += "<div class='item'>" + geofences[i].name + "</div>";
+if(!navigator.geolocation){
+alert("No GPS");
+return;
 }
 
-html += "</div>";
+navigator.geolocation.watchPosition(pos=>{
 
-el.innerHTML = html;
+const lat=pos.coords.latitude;
+const lng=pos.coords.longitude;
+const acc=pos.coords.accuracy;
+
+if(!userMarker){
+userMarker=L.marker([lat,lng]).addTo(map);
+}
+
+userMarker.setLatLng([lat,lng]);
+
+if(accuracyCircle) map.removeLayer(accuracyCircle);
+
+accuracyCircle=L.circle([lat,lng],{
+radius:acc,
+color:"#3b82f6",
+fillOpacity:0.1
+}).addTo(map);
+
+/* ================= GEOFENCE ENGINE ================= */
+
+geofences.forEach(g=>{
+
+const d=distance(lat,lng,g.lat,g.lng);
+const inside=d<g.radius;
+
+/* ENTER */
+if(inside && !insideState[g.id]){
+
+insideState[g.id]=true;
+
+addFeed("ENTER","Entered "+g.name);
+notify("Entered zone",g.name);
+
+}
+
+/* EXIT */
+if(!inside && insideState[g.id]){
+
+insideState[g.id]=false;
+
+addFeed("EXIT","Left "+g.name);
+notify("Exited zone",g.name);
+
+}
+
+});
+
+map.setView([lat,lng],15);
+
+save();
+
+},err=>{
+alert("Location blocked");
+});
 }
 
 /* ================= MAP CLICK ================= */
 
-map.on("click", function(e){
+map.on("click",e=>{
 
-let type = prompt("place or geofence");
-if(!type) return;
+const type=prompt("place or geofence");
+if(!type)return;
 
-if(type === "place"){
-
-let name = prompt("name");
+if(type==="place"){
 
 places.push({
 id:Date.now(),
-name:name,
+name:prompt("name"),
 lat:e.latlng.lat,
 lng:e.latlng.lng
 });
@@ -183,15 +199,12 @@ render();
 return;
 }
 
-let name = prompt("geofence name");
-let radius = prompt("radius",200);
-
 geofences.push({
 id:Date.now(),
-name:name,
+name:prompt("name"),
 lat:e.latlng.lat,
 lng:e.latlng.lng,
-radius:parseInt(radius)
+radius:200
 });
 
 save();
@@ -200,13 +213,48 @@ render();
 
 });
 
+/* ================= SIDEBAR ================= */
+
+function render(){
+
+const s=document.getElementById("sidebar");
+
+let html="";
+
+/* FEED */
+html+="<div><b>LIVE FEED</b></div>";
+
+if(feed.length===0){
+html+="<div>No activity yet</div>";
+}else{
+feed.forEach(f=>{
+html+=`
+<div>
+<b>${f.type}</b><br>
+<small>${f.time}</small><br>
+${f.text}
+</div><hr>
+`;
+});
+}
+
+/* PLACES */
+html+="<div><b>PLACES</b></div>";
+places.forEach(p=>{
+html+=`<div>${p.name}</div>`;
+});
+
+/* GEOFENCES */
+html+="<div><b>GEOFENCES</b></div>";
+geofences.forEach(g=>{
+html+=`<div>${g.name} (${g.radius}m)</div>`;
+});
+
+s.innerHTML=html;
+}
+
 /* ================= INIT ================= */
 
 drawPlaces();
 drawGeofences();
 render();
-
-</script>
-
-</body>
-</html>
