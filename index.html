@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Geo Platform ULTRA STABLE</title>
+<title>Geo Platform Stable Supabase</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -45,6 +45,7 @@ border-radius:6px;
 background:#2563eb;
 color:white;
 cursor:pointer;
+margin-top:5px;
 }
 </style>
 </head>
@@ -52,7 +53,7 @@ cursor:pointer;
 <body>
 
 <div id="wrap">
-<div id="sidebar"></div>
+<div id="sidebar">Loading...</div>
 <div id="map"></div>
 </div>
 
@@ -62,18 +63,25 @@ cursor:pointer;
 <script>
 
 /* =========================
-STATE (ALWAYS SAFE)
+SUPABASE (IMPORTANT)
 ========================= */
 
-let places = [];
-let geofences = [];
-let feed = [];
-let inside = {};
+const SUPABASE_URL = "https://ihvutyeambhbynjsjnbw.supabase.co";
+const SUPABASE_KEY = "sb_publishable_2V_TIKwFpZWLvS1V_vUl_g_HW3WL6pJ";
 
-let backend = null;
+let supabase = null;
+let backendOK = false;
+
+try {
+supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+backendOK = true;
+} catch (e) {
+console.log("Supabase init failed", e);
+backendOK = false;
+}
 
 /* =========================
-MAP (ALWAYS LOAD FIRST)
+MAP (ALWAYS WORKS)
 ========================= */
 
 const map = L.map('map').setView([55.9533,-3.1883],13);
@@ -83,49 +91,88 @@ attribution:'© OpenStreetMap'
 }).addTo(map);
 
 /* =========================
-SAFE SUPABASE INIT
+STATE
 ========================= */
+
+let places = [];
+let geofences = [];
+let feed = [];
+let inside = {};
+
+let userMarker = null;
+let accuracyCircle = null;
+
+/* =========================
+LOAD FROM SUPABASE
+========================= */
+
+async function loadData(){
 
 try {
-backend = window.supabase.createClient(
-"YOUR_SUPABASE_URL",
-"YOUR_SUPABASE_ANON_KEY"
-);
+
+if(!backendOK) return;
+
+const p = await supabase.from("places").select("*");
+const g = await supabase.from("geofences").select("*");
+const f = await supabase.from("feed").select("*");
+
+places = p.data || [];
+geofences = g.data || [];
+feed = f.data || [];
+
 } catch (e) {
-console.log("Supabase OFFLINE:", e);
-backend = null;
+console.log("Load error:", e);
 }
 
+render();
+draw();
+}
+
+loadData();
+
 /* =========================
-RENDER (NEVER FAILS)
+FEED (SAFE)
 ========================= */
 
-function render(){
+async function addFeed(text){
 
-const s = document.getElementById("sidebar");
+feed.unshift({ text });
 
-s.innerHTML = `
-<div class="card">
-<button onclick="startTracking()">Start Tracking</button>
-</div>
+if(feed.length > 50) feed.pop();
 
-<div class="card">
-<b>Status</b><br>
-Backend: ${backend ? "Connected" : "Offline"}<br>
-Places: ${places.length}<br>
-Geofences: ${geofences.length}
-</div>
+try {
+if(backendOK){
+await supabase.from("feed").insert([{text}]);
+}
+} catch (e) {
+console.log(e);
+}
 
-<div class="card">
-<b>Feed</b><br>
-${feed.length ? feed.map(f=>`<div>${f.text}</div>`).join("") : "No activity yet"}
-</div>
-`;
-
+render();
 }
 
 /* =========================
-DRAW MAP (SAFE)
+DISTANCE
+========================= */
+
+function distance(a,b,c,d){
+
+const R = 6371000;
+
+const dLat = (c-a)*Math.PI/180;
+const dLng = (d-b)*Math.PI/180;
+
+const x =
+Math.sin(dLat/2)**2 +
+Math.cos(a*Math.PI/180)*
+Math.cos(c*Math.PI/180)*
+Math.sin(dLng/2)**2;
+
+return R * 2 * Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+/* =========================
+DRAW
 ========================= */
 
 let markers=[];
@@ -139,97 +186,58 @@ circles.forEach(c=>map.removeLayer(c));
 markers=[];
 circles=[];
 
+/* places */
 for(const p of places){
 if(!p.lat) continue;
-markers.push(L.marker([p.lat,p.lng]).addTo(map).bindPopup(p.name));
+
+const m = L.marker([p.lat,p.lng]).addTo(map);
+m.bindPopup(p.name || "Place");
+markers.push(m);
 }
 
+/* geofences */
 for(const g of geofences){
 if(!g.lat) continue;
-circles.push(
-L.circle([g.lat,g.lng],{
-radius:g.radius||200,
+
+const c = L.circle([g.lat,g.lng],{
+radius:g.radius || 200,
 color:"orange",
 fillOpacity:0.2
-}).addTo(map)
-);
+}).addTo(map);
+
+circles.push(c);
 }
 
 }
 
 /* =========================
-SAFE FEED
+TRACKING
 ========================= */
-
-async function addFeed(text){
-
-feed.unshift({text});
-
-if(feed.length>50) feed.pop();
-
-/* try backend but NEVER block */
-try {
-if(backend){
-await backend.from("feed").insert([{text}]);
-}
-} catch(e){
-console.log("feed error",e);
-}
-
-render();
-}
-
-/* =========================
-DISTANCE
-========================= */
-
-function distance(a,b,c,d){
-const R=6371000;
-const dLat=(c-a)*Math.PI/180;
-const dLng=(d-b)*Math.PI/180;
-
-const x =
-Math.sin(dLat/2)**2 +
-Math.cos(a*Math.PI/180)*
-Math.cos(c*Math.PI/180)*
-Math.sin(dLng/2)**2;
-
-return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-/* =========================
-TRACKING (SAFE)
-========================= */
-
-let userMarker=null;
-let accCircle=null;
-let tracking=false;
 
 function startTracking(){
 
-if(tracking) return;
-tracking=true;
-
 if(!navigator.geolocation){
-alert("No GPS");
+alert("GPS not supported");
 return;
 }
 
 navigator.geolocation.watchPosition(async pos=>{
 
-const lat=pos.coords.latitude;
-const lng=pos.coords.longitude;
-const acc=pos.coords.accuracy;
+const lat = pos.coords.latitude;
+const lng = pos.coords.longitude;
+const acc = pos.coords.accuracy;
 
 if(!userMarker){
-userMarker=L.marker([lat,lng]).addTo(map);
+userMarker = L.marker([lat,lng]).addTo(map);
 }
 
 userMarker.setLatLng([lat,lng]);
 
-if(accCircle) map.removeLayer(accCircle);
+if(accuracyCircle){
+map.removeLayer(accuracyCircle);
+}
 
-accCircle=L.circle([lat,lng],{
+accuracyCircle = L.circle([lat,lng],{
 radius:acc,
 color:"#3b82f6",
 fillOpacity:0.1
@@ -244,20 +252,20 @@ const d = distance(lat,lng,g.lat,g.lng);
 const insideNow = d < g.radius;
 
 if(insideNow && !inside[g.id]){
-inside[g.id]=true;
-await addFeed("Entered "+g.name);
+inside[g.id] = true;
+await addFeed("Entered " + g.name);
 }
 
 if(!insideNow && inside[g.id]){
-inside[g.id]=false;
-await addFeed("Left "+g.name);
+inside[g.id] = false;
+await addFeed("Left " + g.name);
 }
 }
 
 map.setView([lat,lng],15);
 
 },err=>{
-alert("GPS blocked");
+alert("Location blocked");
 });
 
 }
@@ -268,12 +276,12 @@ MAP CLICK
 
 map.on("click",async e=>{
 
-const type=prompt("place or geofence");
+const type = prompt("place or geofence");
 if(!type) return;
 
 if(type==="place"){
 
-const name=prompt("name");
+const name = prompt("name");
 
 places.push({
 id:Date.now(),
@@ -282,15 +290,15 @@ lat:e.latlng.lat,
 lng:e.latlng.lng
 });
 
-await addFeed("Added place "+name);
+await addFeed("Added place " + name);
 
 draw();
 render();
 return;
 }
 
-const name=prompt("geofence name");
-const radius=parseInt(prompt("radius","200"));
+const name = prompt("geofence name");
+const radius = parseInt(prompt("radius","200"));
 
 geofences.push({
 id:Date.now(),
@@ -300,7 +308,7 @@ lng:e.latlng.lng,
 radius
 });
 
-await addFeed("Added geofence "+name);
+await addFeed("Added geofence " + name);
 
 draw();
 render();
@@ -308,33 +316,39 @@ render();
 });
 
 /* =========================
-BOOT SEQUENCE (IMPORTANT FIX)
+RENDER UI
 ========================= */
 
-/* ALWAYS RUN THESE — NEVER DEPEND ON BACKEND */
-render();
-draw();
+function render(){
 
-/* optional backend load (non-fatal) */
-(async ()=>{
-try{
-if(!backend) return;
+const s = document.getElementById("sidebar");
 
-const p=await backend.from("places").select("*");
-const g=await backend.from("geofences").select("*");
-const f=await backend.from("feed").select("*");
+s.innerHTML = `
+<div class="card">
+<button onclick="startTracking()">Start Tracking</button>
+</div>
 
-places=p.data||[];
-geofences=g.data||[];
-feed=f.data||[];
+<div class="card">
+<b>Status</b><br>
+Backend: ${backendOK ? "Connected" : "Offline"}<br>
+Places: ${places.length}<br>
+Geofences: ${geofences.length}
+</div>
 
-render();
-draw();
+<div class="card">
+<b>Feed</b><br>
+${feed.length ? feed.map(f=>`<div>${f.text}</div>`).join("") : "No activity yet"}
+</div>
+`;
 
-}catch(e){
-console.log("backend load failed but app still works",e);
 }
-})();
+
+/* =========================
+BOOT (IMPORTANT)
+========================= */
+
+render();
+draw();
 
 </script>
 
