@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Geo SaaS Realtime Platform</title>
+<title>Geo SaaS Stable Build</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -59,27 +59,28 @@ margin-top:5px;
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script type="module">
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
 /* =========================
-SUPABASE CONFIG
+SUPABASE
 ========================= */
 
-const SUPABASE_URL = "https://ihvutyeambhbynjsjnbw.supabase.co";
-const SUPABASE_KEY = "sb_publishable_2V_TIKwFpZWLvS1V_vUl_g_HW3WL6pJ";
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = createClient(
+"https://ihvutyeambhbynjsjnbw.supabase.co",
+"sb_publishable_2V_TIKwFpZWLvS1V_vUl_g_HW3WL6pJ"
+);
 
 let backendOK = false;
 
-/* test connection */
-async function testBackend(){
-try {
+/* test */
+async function test(){
+try{
 const { error } = await supabase.from("places").select("*").limit(1);
 backendOK = !error;
-} catch {
+}catch{
 backendOK = false;
 }
 }
@@ -107,12 +108,12 @@ let userMarker = null;
 let accuracyCircle = null;
 
 /* =========================
-LOAD DATA
+LOAD
 ========================= */
 
-async function loadData(){
+async function load(){
 
-await testBackend();
+await test();
 
 if(backendOK){
 
@@ -136,29 +137,23 @@ REALTIME
 
 function enableRealtime(){
 
-supabase
-.channel("feed")
+supabase.channel("feed")
 .on("postgres_changes",
 { event:"*", schema:"public", table:"feed" },
-()=> loadData()
-)
-.subscribe();
+()=>load()
+).subscribe();
 
-supabase
-.channel("places")
+supabase.channel("places")
 .on("postgres_changes",
 { event:"*", schema:"public", table:"places" },
-()=> loadData()
-)
-.subscribe();
+()=>load()
+).subscribe();
 
-supabase
-.channel("geofences")
+supabase.channel("geofences")
 .on("postgres_changes",
 { event:"*", schema:"public", table:"geofences" },
-()=> loadData()
-)
-.subscribe();
+()=>load()
+).subscribe();
 
 }
 
@@ -168,12 +163,12 @@ FEED
 
 async function addFeed(text){
 
-feed.unshift({ text });
+feed.unshift({text});
 
 if(feed.length>50) feed.pop();
 
 if(backendOK){
-await supabase.from("feed").insert([{ text }]);
+await supabase.from("feed").insert([{text}]);
 }
 
 render();
@@ -184,9 +179,7 @@ DISTANCE
 ========================= */
 
 function distance(a,b,c,d){
-
 const R=6371000;
-
 const dLat=(c-a)*Math.PI/180;
 const dLng=(d-b)*Math.PI/180;
 
@@ -214,13 +207,11 @@ circles.forEach(c=>map.removeLayer(c));
 markers=[];
 circles=[];
 
-/* places */
 for(const p of places){
 if(!p.lat) continue;
 markers.push(L.marker([p.lat,p.lng]).addTo(map).bindPopup(p.name));
 }
 
-/* geofences */
 for(const g of geofences){
 if(!g.lat) continue;
 circles.push(
@@ -239,6 +230,11 @@ TRACKING
 ========================= */
 
 function startTracking(){
+
+if(!navigator.geolocation){
+alert("No GPS");
+return;
+}
 
 navigator.geolocation.watchPosition(async pos=>{
 
@@ -264,8 +260,8 @@ for(const g of geofences){
 
 if(!g.lat) continue;
 
-const d = distance(lat,lng,g.lat,g.lng);
-const insideNow = d < g.radius;
+const d=distance(lat,lng,g.lat,g.lng);
+const insideNow=d<g.radius;
 
 if(insideNow && !inside[g.id]){
 inside[g.id]=true;
@@ -295,11 +291,9 @@ if(!type) return;
 
 if(type==="place"){
 
-const name=prompt("name");
-
 places.push({
 id:Date.now(),
-name,
+name:prompt("name"),
 lat:e.latlng.lat,
 lng:e.latlng.lng
 });
@@ -311,15 +305,12 @@ render();
 return;
 }
 
-const name=prompt("geofence name");
-const radius=parseInt(prompt("radius","200"));
-
 geofences.push({
 id:Date.now(),
-name,
+name:prompt("name"),
 lat:e.latlng.lat,
 lng:e.latlng.lng,
-radius
+radius:parseInt(prompt("radius","200"))
 });
 
 await addFeed("Added geofence");
@@ -330,15 +321,15 @@ render();
 });
 
 /* =========================
-RENDER
+RENDER UI
 ========================= */
 
 function render(){
 
 document.getElementById("sidebar").innerHTML=`
 <div class="card">
-<button onclick="startTracking()">Start Tracking</button>
-<button onclick="enableRealtime()">Enable Realtime</button>
+<button id="trackBtn">Start Tracking</button>
+<button id="rtBtn">Enable Realtime</button>
 </div>
 
 <div class="card">
@@ -354,14 +345,17 @@ ${feed.length?feed.map(f=>`<div>${f.text}</div>`).join(""):"No activity yet"}
 </div>
 `;
 
+/* attach events AFTER render */
+document.getElementById("trackBtn").onclick = startTracking;
+document.getElementById("rtBtn").onclick = enableRealtime;
+
 }
 
 /* =========================
 BOOT
 ========================= */
 
-await loadData();
-enableRealtime();
+await load();
 render();
 draw();
 
