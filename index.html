@@ -3,46 +3,353 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeoPlatform Stable Full</title>
 
-<title>MAP TEST</title>
-
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
 html,body{
 margin:0;
 height:100%;
+font-family:Arial,sans-serif;
+background:#0f172a;
+overflow:hidden;
+}
+
+#topbar{
+height:50px;
+background:#111827;
+color:white;
+display:flex;
+align-items:center;
+padding:0 12px;
+gap:10px;
+border-bottom:1px solid #1f2937;
+}
+
+button{
+background:#2563eb;
+color:white;
+border:none;
+border-radius:8px;
+padding:6px 10px;
+cursor:pointer;
+}
+
+#container{
+display:flex;
+height:calc(100vh - 50px);
+}
+
+#sidebar{
+width:320px;
+background:#111827;
+color:white;
+overflow:auto;
+padding:10px;
+border-right:1px solid #1f2937;
 }
 
 #map{
-height:100vh;
-width:100%;
+flex:1;
 }
+
+.card{
+background:#1f2937;
+padding:10px;
+border-radius:10px;
+margin-bottom:10px;
+}
+
+.section{
+font-size:12px;
+opacity:0.7;
+margin-bottom:6px;
+}
+
+.item{
+background:#374151;
+padding:8px;
+border-radius:8px;
+margin-bottom:6px;
+}
+
+.small{
+font-size:12px;
+opacity:0.7;
+}
+
+.row{
+display:flex;
+gap:6px;
+margin-top:6px;
+}
+
 </style>
 </head>
 
 <body>
 
+<div id="topbar">
+<button onclick="startTracking()">Track</button>
+<span>GeoPlatform</span>
+</div>
+
+<div id="container">
+<div id="sidebar"></div>
 <div id="map"></div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-console.log("SCRIPT LOADED OK");
+/* ================= MAP ================= */
 
-/* MAP INIT */
 const map = L.map('map').setView([55.9533, -3.1883], 13);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-attribution: '© OpenStreetMap'
+attribution:'© OpenStreetMap'
 }).addTo(map);
 
-/* TEST MARKER */
-L.marker([55.9533, -3.1883])
-.addTo(map)
-.bindPopup("MAP WORKING")
-.openPopup();
+/* ================= DATA ================= */
+
+let places = JSON.parse(localStorage.getItem("places") || "[]");
+let geofences = JSON.parse(localStorage.getItem("geofences") || "[]");
+
+let placeMarkers = [];
+let fenceLayers = [];
+
+let routeA = null;
+let routeB = null;
+let routeLine = null;
+
+/* ================= SAVE ================= */
+
+function save(){
+localStorage.setItem("places", JSON.stringify(places));
+localStorage.setItem("geofences", JSON.stringify(geofences));
+}
+
+/* ================= DIST ================= */
+
+function dist(a,b,c,d){
+const R = 6371000;
+const dLat = (c-a)*Math.PI/180;
+const dLng = (d-b)*Math.PI/180;
+
+const x =
+Math.sin(dLat/2)**2 +
+Math.cos(a*Math.PI/180) *
+Math.cos(c*Math.PI/180) *
+Math.sin(dLng/2)**2;
+
+return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+/* ================= PLACES ================= */
+
+function drawPlaces(){
+
+placeMarkers.forEach(m=>map.removeLayer(m));
+placeMarkers=[];
+
+places.forEach(p=>{
+const m = L.marker([p.lat,p.lng]).addTo(map);
+m.bindPopup(p.name);
+placeMarkers.push(m);
+});
+}
+
+/* ================= GEOFENCES ================= */
+
+function drawGeofences(){
+
+fenceLayers.forEach(f=>map.removeLayer(f));
+fenceLayers=[];
+
+geofences.forEach(g=>{
+const c = L.circle([g.lat,g.lng],{
+radius:g.radius,
+color:"orange",
+fillOpacity:0.2
+}).addTo(map);
+
+c.bindPopup(g.name);
+fenceLayers.push(c);
+});
+}
+
+/* ================= ROUTING ================= */
+
+async function buildRoute(){
+
+if(!routeA || !routeB) return;
+
+const url =
+`https://router.project-osrm.org/route/v1/driving/${routeA.lng},${routeA.lat};${routeB.lng},${routeB.lat}?overview=full&geometries=geojson`;
+
+const res = await fetch(url);
+const data = await res.json();
+
+if(routeLine) map.removeLayer(routeLine);
+
+routeLine = L.geoJSON(data.routes[0].geometry,{
+color:"blue",
+weight:5
+}).addTo(map);
+
+map.fitBounds(routeLine.getBounds());
+}
+
+/* ================= SIDEBAR ================= */
+
+function render(){
+
+const s = document.getElementById("sidebar");
+
+let html = "";
+
+/* ROUTE */
+html += `
+<div class="card">
+<div class="section">ROUTE</div>
+<div>A: ${routeA ? routeA.name : "none"}</div>
+<div>B: ${routeB ? routeB.name : "none"}</div>
+</div>
+`;
+
+/* PLACES */
+html += `
+<div class="card">
+<div class="section">PLACES</div>
+`;
+
+places.forEach(p=>{
+html += `
+<div class="item">
+<b>${p.name}</b>
+<div class="row">
+<button onclick="map.setView([${p.lat},${p.lng}],15)">Zoom</button>
+<button onclick="setRoute(${p.id})">Route</button>
+</div>
+</div>
+`;
+});
+
+html += `</div>`;
+
+/* GEOFENCES */
+html += `
+<div class="card">
+<div class="section">GEOFENCES</div>
+`;
+
+geofences.forEach(g=>{
+html += `
+<div class="item">
+<b>${g.name}</b>
+<div class="small">${g.radius}m</div>
+</div>
+`;
+});
+
+html += `</div>`;
+
+s.innerHTML = html;
+}
+
+/* ================= ROUTE SELECT ================= */
+
+function setRoute(id){
+
+const p = places.find(x=>x.id===id);
+if(!p) return;
+
+if(!routeA){
+routeA = p;
+render();
+return;
+}
+
+if(!routeB){
+routeB = p;
+buildRoute();
+render();
+return;
+}
+
+routeA = p;
+routeB = null;
+
+if(routeLine){
+map.removeLayer(routeLine);
+routeLine=null;
+}
+
+render();
+}
+
+/* ================= TRACKING ================= */
+
+function startTracking(){
+
+navigator.geolocation.watchPosition(pos=>{
+
+const lat = pos.coords.latitude;
+const lng = pos.coords.longitude;
+
+L.marker([lat,lng]).addTo(map);
+
+}, err=>{
+alert("Location blocked");
+});
+
+}
+
+/* ================= MAP CLICK ================= */
+
+map.on("click", e=>{
+
+const type = prompt("place or geofence");
+if(!type) return;
+
+if(type==="place"){
+
+places.push({
+id:Date.now(),
+name:prompt("name"),
+lat:e.latlng.lat,
+lng:e.latlng.lng
+});
+
+save();
+drawPlaces();
+render();
+return;
+
+}
+
+geofences.push({
+id:Date.now(),
+name:prompt("name"),
+lat:e.latlng.lat,
+lng:e.latlng.lng,
+radius:200
+});
+
+save();
+drawGeofences();
+render();
+
+});
+
+/* ================= INIT ================= */
+
+drawPlaces();
+drawGeofences();
+render();
 
 </script>
 
