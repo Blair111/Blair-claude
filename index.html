@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Geo SaaS Stable Step 1</title>
+<title>Geo Stable Fix</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -54,36 +54,13 @@ margin-top:5px;
 <body>
 
 <div id="wrap">
-<div id="sidebar">Booting...</div>
+<div id="sidebar">Loading...</div>
 <div id="map"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script type="module">
-
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-
-/* =========================
-SUPABASE
-========================= */
-
-const supabase = createClient(
-"https://ihvutyeambhbynjsjnbw.supabase.co",
-"sb_publishable_2V_TIKwFpZWLvS1V_vUl_g_HW3WL6pJ"
-);
-
-let backendOK = false;
-
-/* check backend */
-async function checkBackend(){
-try{
-const { error } = await supabase.from("places").select("*").limit(1);
-backendOK = !error;
-}catch{
-backendOK = false;
-}
-}
 
 /* =========================
 MAP
@@ -96,7 +73,7 @@ attribution:'© OpenStreetMap'
 }).addTo(map);
 
 /* =========================
-STATE
+STATE (IMPORTANT — DO NOT BREAK)
 ========================= */
 
 let places = [];
@@ -108,59 +85,83 @@ let userMarker = null;
 let accuracyCircle = null;
 
 /* =========================
-LOAD EVERYTHING (STEP 1 CORE)
+SUPABASE (OPTIONAL SAFE LAYER)
 ========================= */
 
-async function loadAll(){
+let supabase = null;
+let backendOK = false;
 
-await checkBackend();
+async function initSupabase(){
 
-if(backendOK){
+try{
+const { createClient } = await import(
+"https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm"
+);
 
-const p = await supabase.from("places").select("*").order("id", { ascending: false });
-const g = await supabase.from("geofences").select("*").order("id", { ascending: false });
-const f = await supabase.from("feed").select("*").order("id", { ascending: false });
+supabase = createClient(
+"https://ihvutyeambhbynjsjnbw.supabase.co",
+"sb_publishable_2V_TIKwFpZWLvS1V_vUl_g_HW3WL6pJ"
+);
 
-places = p.data || [];
-geofences = g.data || [];
-feed = f.data || [];
+const test = await supabase.from("places").select("*").limit(1);
+backendOK = !test.error;
 
-} else {
-console.log("Backend offline fallback mode");
+}catch(e){
+console.log("Supabase offline");
+backendOK = false;
+}
+
+}
+
+/* =========================
+LOAD (SAFE + DOES NOT BREAK GEO)
+========================= */
+
+async function load(){
+
+if(backendOK && supabase){
+
+const p = await supabase.from("places").select("*");
+const g = await supabase.from("geofences").select("*");
+const f = await supabase.from("feed").select("*");
+
+places = p.data || places;
+geofences = g.data || geofences;
+feed = f.data || feed;
+
 }
 
 render();
 draw();
+
 }
 
 /* =========================
-FEED (STABLE)
+FEED
 ========================= */
 
 async function addFeed(text){
 
-const item = { text };
+feed.unshift({text});
+if(feed.length>80) feed.pop();
 
-feed.unshift(item);
-
-if(feed.length > 80) feed.pop();
-
-if(backendOK){
-await supabase.from("feed").insert([{ text }]);
+if(backendOK && supabase){
+await supabase.from("feed").insert([{text}]);
 }
 
 render();
+
 }
 
 /* =========================
-DISTANCE
+DISTANCE (CORE GEO ENGINE)
 ========================= */
 
 function distance(a,b,c,d){
 const R = 6371000;
 
-const dLat = (c-a) * Math.PI/180;
-const dLng = (d-b) * Math.PI/180;
+const dLat = (c-a)*Math.PI/180;
+const dLng = (d-b)*Math.PI/180;
 
 const x =
 Math.sin(dLat/2)**2 +
@@ -168,11 +169,11 @@ Math.cos(a*Math.PI/180) *
 Math.cos(c*Math.PI/180) *
 Math.sin(dLng/2)**2;
 
-return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+return R * 2 * Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
 /* =========================
-DRAW MAP
+DRAW (CRITICAL FIX AREA)
 ========================= */
 
 let markers = [];
@@ -197,7 +198,7 @@ L.marker([p.lat,p.lng])
 );
 }
 
-/* geofences */
+/* 🔵 GEOFENCES (RESTORED + SAFE) */
 for(const g of geofences){
 if(!g.lat) continue;
 
@@ -206,7 +207,7 @@ L.circle([g.lat,g.lng],{
 radius:g.radius || 200,
 color:"#3b82f6",
 fillColor:"#3b82f6",
-fillOpacity:0.2
+fillOpacity:0.25
 }).addTo(map)
 );
 }
@@ -214,13 +215,13 @@ fillOpacity:0.2
 }
 
 /* =========================
-TRACKING (UNCHANGED CORE)
+TRACKING (UNCHANGED CORE LOGIC)
 ========================= */
 
 function startTracking(){
 
 if(!navigator.geolocation){
-alert("GPS not supported");
+alert("No GPS");
 return;
 }
 
@@ -246,8 +247,6 @@ fillOpacity:0.1
 
 for(const g of geofences){
 
-if(!g.lat) continue;
-
 const d = distance(lat,lng,g.lat,g.lng);
 const insideNow = d < g.radius;
 
@@ -270,7 +269,7 @@ map.setView([lat,lng],15);
 }
 
 /* =========================
-MAP CLICK (SIMPLE + STABLE)
+MAP CLICK (SAFE ADD)
 ========================= */
 
 map.on("click",async e=>{
@@ -280,35 +279,37 @@ if(!type) return;
 
 if(type === "place"){
 
-await supabase.from("places").insert([{
-id: Date.now(),
-name: "Place",
-lat: e.latlng.lat,
-lng: e.latlng.lng
-}]);
+places.push({
+id:Date.now(),
+name:"Place",
+lat:e.latlng.lat,
+lng:e.latlng.lng
+});
 
 await addFeed("Added place");
 
-loadAll();
+draw();
+render();
 return;
 }
 
-await supabase.from("geofences").insert([{
-id: Date.now(),
-name: "Geofence",
-lat: e.latlng.lat,
-lng: e.latlng.lng,
-radius: 200
-}]);
+geofences.push({
+id:Date.now(),
+name:"Geofence",
+lat:e.latlng.lat,
+lng:e.latlng.lng,
+radius:200
+});
 
 await addFeed("Added geofence");
 
-loadAll();
+draw();
+render();
 
 });
 
 /* =========================
-RENDER (STABLE UI)
+UI
 ========================= */
 
 function render(){
@@ -320,7 +321,7 @@ document.getElementById("sidebar").innerHTML = `
 
 <div class="card">
 <b>Status</b><br>
-Backend: ${backendOK ? "CONNECTED" : "OFFLINE"}<br>
+Backend: ${backendOK ? "CONNECTED" : "LOCAL MODE"}<br>
 Places: ${places.length}<br>
 Geofences: ${geofences.length}
 </div>
@@ -336,10 +337,11 @@ document.getElementById("trackBtn").onclick = startTracking;
 }
 
 /* =========================
-BOOT (IMPORTANT STEP 1 FIX)
+BOOT (IMPORTANT FIX)
 ========================= */
 
-await loadAll();
+await initSupabase();
+await load();
 render();
 draw();
 
