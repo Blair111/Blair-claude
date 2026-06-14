@@ -1,375 +1,943 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Location SaaS MVP</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
+<title>GeoPlatform V2</title>
+
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-html, body {
-    margin: 0;
-    height: 100%;
-    font-family: Inter, Arial, sans-serif;
-    background: #0b1220;
-    color: white;
+
+html,body{
+margin:0;
+height:100%;
+font-family:Arial,sans-serif;
+background:#0f172a;
+overflow:hidden;
 }
 
-/* TOP BAR */
-#topbar {
-    background: #0f172a;
-    padding: 12px 16px;
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    border-bottom: 1px solid #1f2937;
+#topbar{
+height:55px;
+background:#111827;
+color:white;
+display:flex;
+align-items:center;
+padding:0 15px;
+gap:10px;
+border-bottom:1px solid #1f2937;
 }
 
-button {
-    padding: 8px 12px;
-    border: none;
-    border-radius: 8px;
-    background: #3b82f6;
-    color: white;
-    cursor: pointer;
+button{
+background:#2563eb;
+color:white;
+border:none;
+border-radius:8px;
+padding:8px 12px;
+cursor:pointer;
 }
 
-button:hover {
-    background: #2563eb;
+button:hover{
+background:#1d4ed8;
 }
 
-/* LAYOUT */
-#container {
-    display: flex;
-    height: calc(100vh - 50px);
+#container{
+display:flex;
+height:calc(100vh - 55px);
 }
 
-/* SIDEBAR */
-#sidebar {
-    width: 340px;
-    background: #0f172a;
-    border-right: 1px solid #1f2937;
-    padding: 12px;
-    overflow-y: auto;
+#sidebar{
+width:340px;
+background:#111827;
+color:white;
+overflow-y:auto;
+padding:12px;
+border-right:1px solid #1f2937;
 }
 
-/* MAP */
-#map {
-    flex: 1;
+#map{
+flex:1;
 }
 
-/* CARDS */
-.card {
-    background: #111827;
-    border: 1px solid #1f2937;
-    border-radius: 10px;
-    padding: 10px;
-    margin-bottom: 10px;
+.card{
+background:#1f2937;
+padding:12px;
+border-radius:10px;
+margin-bottom:12px;
 }
 
-.title {
-    font-size: 12px;
-    opacity: 0.7;
-    margin-bottom: 6px;
+.section-title{
+font-size:12px;
+font-weight:bold;
+opacity:0.7;
+margin-bottom:10px;
+letter-spacing:1px;
 }
 
-.event-enter { color: #22c55e; font-weight: bold; }
-.event-exit { color: #ef4444; font-weight: bold; }
-
-.small-btn {
-    font-size: 12px;
-    padding: 4px 8px;
-    margin-top: 6px;
-    background: #ef4444;
+.item{
+background:#374151;
+padding:8px;
+border-radius:8px;
+margin-bottom:8px;
 }
+
+.small{
+font-size:12px;
+opacity:0.8;
+}
+
+.action-row{
+margin-top:8px;
+display:flex;
+gap:6px;
+flex-wrap:wrap;
+}
+
+.action-row button{
+padding:5px 8px;
+font-size:12px;
+}
+
+.archive-btn{
+background:#dc2626;
+}
+
+.restore-btn{
+background:#16a34a;
+}
+
+.zoom-btn{
+background:#2563eb;
+}
+
 </style>
 </head>
 
 <body>
 
 <div id="topbar">
-    <button id="trackBtn">Start Tracking</button>
-    <button id="businessMode">Business Mode: OFF</button>
+
+<button id="trackBtn">
+Start Tracking
+</button>
+
+<button id="businessBtn">
+Business Mode OFF
+</button>
+
+<span id="status">
+Ready
+</span>
+
 </div>
 
 <div id="container">
-    <div id="sidebar"></div>
-    <div id="map"></div>
+
+<div id="sidebar"></div>
+
+<div id="map"></div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-/* =========================
-   MAP
-========================= */
+/* ==========================
+MAP
+========================== */
 
-const map = L.map('map').setView([55.9533, -3.1883], 13);
+const map =
+L.map('map')
+.setView([55.9533,-3.1883],13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap'
-}).addTo(map);
+L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+{
+attribution:'© OpenStreetMap'
+}
+).addTo(map);
 
-/* =========================
-   DATA
-========================= */
+/* ==========================
+STORAGE
+========================== */
 
-let places = JSON.parse(localStorage.getItem("places") || "[]");
-let geofences = JSON.parse(localStorage.getItem("geofences") || "[]");
-let feed = JSON.parse(localStorage.getItem("feed") || "[]");
-let insideState = JSON.parse(localStorage.getItem("insideState") || "{}");
+let places =
+JSON.parse(
+localStorage.getItem('places') || '[]'
+);
 
-/* =========================
-   STATE
-========================= */
+let geofences =
+JSON.parse(
+localStorage.getItem('geofences') || '[]'
+);
+
+let archivedGeofences =
+JSON.parse(
+localStorage.getItem('archivedGeofences') || '[]'
+);
+
+let feed =
+JSON.parse(
+localStorage.getItem('feed') || '[]'
+);
+
+let insideState =
+JSON.parse(
+localStorage.getItem('insideState') || '{}'
+);
+
+/* ==========================
+STATE
+========================== */
+
+let businessMode = false;
+
+let geofenceLayers = [];
+let placeMarkers = [];
 
 let userMarker = null;
 let accuracyCircle = null;
-let geofenceLayers = [];
-let businessMode = false;
 
-/* =========================
-   SAVE
-========================= */
+let totalEntries = 0;
+let totalExits = 0;
 
-function save() {
-    localStorage.setItem("places", JSON.stringify(places));
-    localStorage.setItem("geofences", JSON.stringify(geofences));
-    localStorage.setItem("feed", JSON.stringify(feed));
-    localStorage.setItem("insideState", JSON.stringify(insideState));
+/* ==========================
+SAVE
+========================== */
+
+function saveData(){
+
+localStorage.setItem(
+'places',
+JSON.stringify(places)
+);
+
+localStorage.setItem(
+'geofences',
+JSON.stringify(geofences)
+);
+
+localStorage.setItem(
+'archivedGeofences',
+JSON.stringify(archivedGeofences)
+);
+
+localStorage.setItem(
+'feed',
+JSON.stringify(feed)
+);
+
+localStorage.setItem(
+'insideState',
+JSON.stringify(insideState)
+);
+
 }
 
-/* =========================
-   EVENT SYSTEM
-========================= */
+/* ==========================
+FEED
+========================== */
 
-function addEvent(type, g) {
+function addFeed(text){
 
-    const text =
-        businessMode
-            ? (type === "ENTER" ? "CHECK-IN: " : "CHECK-OUT: ") + g.name
-            : (type === "ENTER" ? "Entered " : "Left ") + g.name;
+feed.unshift({
 
-    feed.unshift({
-        time: new Date().toLocaleTimeString(),
-        type,
-        text,
-        geofenceId: g.id
-    });
+time:new Date()
+.toLocaleTimeString(),
 
-    insideState[g.id] = (type === "ENTER");
+text:text
 
-    save();
-    renderPanel();
-}
-
-/* =========================
-   DISTANCE
-========================= */
-
-function distance(lat1, lon1, lat2, lon2) {
-    const R = 6371000;
-
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lon2 - lon1) * Math.PI / 180;
-
-    const a =
-        Math.sin(dLat/2) ** 2 +
-        Math.cos(lat1 * Math.PI/180) *
-        Math.cos(lat2 * Math.PI/180) *
-        Math.sin(dLng/2) ** 2;
-
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-/* =========================
-   DRAW GEOFENCES
-========================= */
-
-function drawGeofences() {
-
-    geofenceLayers.forEach(l => map.removeLayer(l));
-    geofenceLayers = [];
-
-    geofences.forEach(g => {
-
-        const circle = L.circle([g.lat, g.lng], {
-            radius: g.radius,
-            color: "orange",
-            fillOpacity: 0.2
-        }).addTo(map);
-
-        // attach id for deletion
-        circle._geoId = g.id;
-
-        geofenceLayers.push(circle);
-    });
-}
-
-/* =========================
-   DELETE GEOFENCE
-========================= */
-
-function deleteGeofence(id) {
-
-    geofences = geofences.filter(g => g.id !== id);
-
-    // reset state so no ghost tracking
-    delete insideState[id];
-
-    save();
-    drawGeofences();
-    renderPanel();
-}
-
-/* =========================
-   PANEL
-========================= */
-
-function renderPanel() {
-
-    const el = document.getElementById("sidebar");
-
-    const enterCount = feed.filter(f => f.type === "ENTER").length;
-    const exitCount = feed.filter(f => f.type === "EXIT").length;
-
-    el.innerHTML = `
-
-    <div class="card">
-        <div class="title">LIVE STATS</div>
-        <div>🟢 Entries: ${enterCount}</div>
-        <div>🔴 Exits: ${exitCount}</div>
-        <div>📍 Geofences: ${geofences.length}</div>
-    </div>
-
-    <div class="card">
-        <div class="title">GEOFENCES</div>
-
-        ${geofences.length === 0 ? "None" :
-        geofences.map(g => `
-            <div style="margin-bottom:8px;">
-                📍 ${g.name} (${g.radius}m)
-                <br>
-                <button class="small-btn" onclick="deleteGeofence(${g.id})">
-                    Delete
-                </button>
-            </div>
-        `).join("")}
-    </div>
-
-    <div class="card">
-        <div class="title">EVENT FEED</div>
-
-        ${feed.length === 0 ? "No activity yet" :
-        feed.map(f => `
-            <div style="margin-bottom:10px;">
-                <div class="${f.type === "ENTER" ? "event-enter" : "event-exit"}">
-                    ${f.type}
-                </div>
-                <div style="font-size:12px;opacity:0.7">${f.time}</div>
-                <div>${f.text}</div>
-            </div>
-        `).join("")}
-    </div>
-
-    `;
-}
-
-/* =========================
-   TRACKING
-========================= */
-
-document.getElementById("trackBtn").onclick = () => {
-
-    if (!navigator.geolocation) {
-        alert("Geolocation not supported");
-        return;
-    }
-
-    navigator.geolocation.watchPosition(pos => {
-
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const acc = pos.coords.accuracy;
-
-        if (!userMarker) {
-            userMarker = L.marker([lat, lng]).addTo(map);
-        }
-
-        userMarker.setLatLng([lat, lng]);
-
-        if (accuracyCircle) map.removeLayer(accuracyCircle);
-
-        accuracyCircle = L.circle([lat, lng], {
-            radius: acc,
-            color: "#3b82f6",
-            fillOpacity: 0.1
-        }).addTo(map);
-
-        geofences.forEach(g => {
-
-            const d = distance(lat, lng, g.lat, g.lng);
-            const inside = d < g.radius;
-
-            if (inside && !insideState[g.id]) {
-                addEvent("ENTER", g);
-            }
-
-            if (!inside && insideState[g.id]) {
-                addEvent("EXIT", g);
-            }
-        });
-
-        map.setView([lat, lng], 15);
-
-    }, err => {
-        alert("Location permission blocked");
-    });
-};
-
-/* =========================
-   BUSINESS MODE
-========================= */
-
-document.getElementById("businessMode").onclick = () => {
-    businessMode = !businessMode;
-    document.getElementById("businessMode").innerText =
-        "Business Mode: " + (businessMode ? "ON" : "OFF");
-};
-
-/* =========================
-   ADD GEOFENCE (CLICK MAP)
-========================= */
-
-map.on("click", e => {
-
-    const name = prompt("Geofence name");
-    if (!name) return;
-
-    const radius = parseInt(prompt("Radius (meters)", 200));
-
-    geofences.push({
-        id: Date.now(),
-        name,
-        lat: e.latlng.lat,
-        lng: e.latlng.lng,
-        radius
-    });
-
-    save();
-    drawGeofences();
-    renderPanel();
 });
 
-/* =========================
-   INIT
-========================= */
+if(feed.length > 100){
+feed.pop();
+}
+
+saveData();
+renderSidebar();
+
+}
+
+/* ==========================
+REVERSE GEOCODER
+========================== */
+
+async function getAddress(lat,lng){
+
+try{
+
+const response =
+await fetch(
+`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`
+);
+
+const data =
+await response.json();
+
+return data.display_name || "Unknown";
+
+}
+catch{
+
+return "Unknown";
+
+}
+
+}
+
+/* ==========================
+DRAW PLACES
+========================== */
+
+function drawPlaces(){
+
+placeMarkers.forEach(m=>{
+map.removeLayer(m);
+});
+
+placeMarkers=[];
+
+places.forEach(place=>{
+
+const marker =
+L.marker([
+place.lat,
+place.lng
+])
+.addTo(map);
+
+marker.bindPopup(
+"<b>"+place.name+"</b>"
+);
+
+placeMarkers.push(marker);
+
+});
+
+}
+
+/* ==========================
+DRAW GEOFENCES
+========================== */
+
+function drawGeofences(){
+
+geofenceLayers.forEach(layer=>{
+map.removeLayer(layer);
+});
+
+geofenceLayers=[];
+
+geofences.forEach(g=>{
+
+const circle =
+L.circle(
+[g.lat,g.lng],
+{
+radius:g.radius,
+color:'orange',
+fillOpacity:0.2
+}
+)
+.addTo(map);
+
+circle.bindPopup(
+"<b>"+g.name+"</b><br>"
++
+g.radius
++
+"m"
+);
+
+geofenceLayers.push(circle);
+
+});
+
+}
+
+/* ==========================
+ARCHIVE
+========================== */
+
+function archiveGeofence(id){
+
+const fence =
+geofences.find(
+g=>g.id===id
+);
+
+if(!fence) return;
+
+fence.deletedAt =
+new Date()
+.toLocaleString();
+
+archivedGeofences.push(
+fence
+);
+
+geofences =
+geofences.filter(
+g=>g.id!==id
+);
+
+delete insideState[id];
+
+addFeed(
+"Archived geofence: "
++
+fence.name
+);
+
+saveData();
 
 drawGeofences();
-renderPanel();
 
+renderSidebar();
+
+}
+
+/* ==========================
+RESTORE
+========================== */
+
+function restoreGeofence(id){
+
+const fence =
+archivedGeofences.find(
+g=>g.id===id
+);
+
+if(!fence) return;
+
+geofences.push(fence);
+
+archivedGeofences =
+archivedGeofences.filter(
+g=>g.id!==id
+);
+
+addFeed(
+"Restored geofence: "
++
+fence.name
+);
+
+saveData();
+
+drawGeofences();
+
+renderSidebar();
+
+}
+
+/* ==========================
+ZOOM
+========================== */
+
+function zoomTo(lat,lng){
+
+map.setView(
+[lat,lng],
+17
+);
+
+}
+
+/* ==========================
+SIDEBAR
+========================== */
+
+function renderSidebar(){
+
+const sidebar =
+document.getElementById(
+'sidebar'
+);
+
+sidebar.innerHTML = `
+
+<div class="card">
+
+<div class="section-title">
+LIVE STATS
+</div>
+
+<div>
+📍 Places:
+${places.length}
+</div>
+
+<div>
+🟠 Active:
+${geofences.length}
+</div>
+
+<div>
+📦 Archived:
+${archivedGeofences.length}
+</div>
+
+<div>
+✅ Entries:
+${totalEntries}
+</div>
+
+<div>
+🚪 Exits:
+${totalExits}
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="section-title">
+SAVED LOCATIONS
+</div>
+
+${
+places.length===0
+?
+'None'
+:
+places.map(place=>`
+<div class="item">
+
+<b>${place.name}</b>
+
+<div class="small">
+${place.address || ''}
+</div>
+
+<div class="action-row">
+
+<button
+class="zoom-btn"
+onclick="
+zoomTo(
+${place.lat},
+${place.lng}
+)
+">
+Zoom
+</button>
+
+</div>
+
+</div>
+`).join('')
+}
+
+</div>
+
+<div class="card">
+
+<div class="section-title">
+ACTIVE GEOFENCES
+</div>
+
+${
+geofences.length===0
+?
+'None'
+:
+geofences.map(g=>`
+<div class="item">
+
+<b>${g.name}</b>
+
+<div class="small">
+${g.radius}m
+</div>
+
+<div class="action-row">
+
+<button
+class="zoom-btn"
+onclick="
+zoomTo(
+${g.lat},
+${g.lng}
+)
+">
+Zoom
+</button>
+
+<button
+class="archive-btn"
+onclick="
+archiveGeofence(
+${g.id}
+)
+">
+Archive
+</button>
+
+</div>
+
+</div>
+`).join('')
+}
+
+</div>
+
+<div class="card">
+
+<div class="section-title">
+ARCHIVED GEOFENCES
+</div>
+
+${
+archivedGeofences.length===0
+?
+'None'
+:
+archivedGeofences.map(g=>`
+<div class="item">
+
+<b>${g.name}</b>
+
+<div class="small">
+Deleted:
+${g.deletedAt}
+</div>
+
+<div class="action-row">
+
+<button
+class="restore-btn"
+onclick="
+restoreGeofence(
+${g.id}
+)
+">
+Restore
+</button>
+
+</div>
+
+</div>
+`).join('')
+}
+
+</div>
+
+`;
+
+}
+
+/* ==========================
+ADD OBJECTS
+========================== */
+
+map.on(
+'click',
+async e=>{
+
+const type =
+prompt(
+'place or geofence'
+);
+
+if(!type) return;
+
+if(
+type.toLowerCase()
+===
+'place'
+){
+
+const name =
+prompt(
+'Location name'
+);
+
+if(!name) return;
+
+const address =
+await getAddress(
+e.latlng.lat,
+e.latlng.lng
+);
+
+places.push({
+
+id:Date.now(),
+
+name:name,
+
+lat:e.latlng.lat,
+
+lng:e.latlng.lng,
+
+address:address
+
+});
+
+saveData();
+
+drawPlaces();
+
+renderSidebar();
+
+return;
+
+}
+
+const name =
+prompt(
+'Geofence name'
+);
+
+if(!name) return;
+
+const radius =
+parseInt(
+prompt(
+'Radius',
+'200'
+)
+);
+
+geofences.push({
+
+id:Date.now(),
+
+name:name,
+
+lat:e.latlng.lat,
+
+lng:e.latlng.lng,
+
+radius:radius
+
+});
+
+saveData();
+
+drawGeofences();
+
+renderSidebar();
+
+}
+);
+document
+.getElementById(
+'trackBtn'
+)
+.onclick = ()=>{
+
+if(
+!navigator.geolocation
+){
+alert(
+'Location unsupported'
+);
+return;
+}
+
+navigator.geolocation.watchPosition(
+
+position=>{
+
+const lat =
+position.coords.latitude;
+
+const lng =
+position.coords.longitude;
+
+const accuracy =
+position.coords.accuracy;
+
+if(!userMarker){
+
+const icon =
+L.divIcon({
+
+html:`
+<div style="
+width:20px;
+height:20px;
+background:#2563eb;
+border:3px solid white;
+border-radius:50%;
+box-shadow:0 0 10px rgba(37,99,235,.8);
+"></div>
+`,
+
+className:''
+
+});
+
+userMarker =
+L.marker(
+[lat,lng],
+{
+icon
+}
+)
+.addTo(map);
+
+}
+
+userMarker.setLatLng(
+[lat,lng]
+);
+
+if(
+accuracyCircle
+){
+map.removeLayer(
+accuracyCircle
+);
+}
+
+accuracyCircle =
+L.circle(
+[lat,lng],
+{
+radius:accuracy,
+color:'#2563eb',
+fillOpacity:0.1
+}
+)
+.addTo(map);
+
+geofences.forEach(g=>{
+
+const d =
+map.distance(
+[lat,lng],
+[g.lat,g.lng]
+);
+
+const inside =
+d < g.radius;
+
+if(
+inside &&
+!insideState[g.id]
+){
+
+insideState[g.id]=true;
+
+totalEntries++;
+
+addFeed(
+
+businessMode
+?
+'CHECK-IN: ' + g.name
+:
+'Entered ' + g.name
+
+);
+
+}
+
+if(
+!inside &&
+insideState[g.id]
+){
+
+insideState[g.id]=false;
+
+totalExits++;
+
+addFeed(
+
+businessMode
+?
+'CHECK-OUT: ' + g.name
+:
+'Left ' + g.name
+
+);
+
+}
+
+});
+
+document
+.getElementById(
+'status'
+)
+.innerText =
+'Tracking';
+
+},
+
+err=>{
+
+alert(
+'Location permission denied'
+);
+
+}
+
+);
+
+};
+/* ==========================
+STARTUP
+========================== */
+
+drawPlaces();
+drawGeofences();
+renderSidebar();
+
+feed.forEach(item=>{
+
+if(
+item.text.includes(
+'Entered'
+)
+||
+item.text.includes(
+'CHECK-IN'
+)
+){
+totalEntries++;
+}
+
+if(
+item.text.includes(
+'Left'
+)
+||
+item.text.includes(
+'CHECK-OUT'
+)
+){
+totalExits++;
+}
+
+});
+document
+.getElementById(
+'businessBtn'
+)
+.onclick = ()=>{
+
+businessMode =
+!businessMode;
+
+document
+.getElementById(
+'businessBtn'
+)
+.innerText =
+businessMode
+?
+'Business Mode ON'
+:
+'Business Mode OFF';
+
+};
 </script>
 
 </body>
