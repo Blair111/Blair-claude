@@ -123,9 +123,6 @@ background:#2563eb;
 Start Tracking
 </button>
 
-<button id="businessBtn">
-Business Mode OFF
-</button>
 
 <span id="status">
 Ready
@@ -193,9 +190,8 @@ localStorage.getItem('insideState') || '{}'
 STATE
 ========================== */
 
-let businessMode = false;
-
 let geofenceLayers = [];
+
 let placeMarkers = [];
 
 let userMarker = null;
@@ -203,6 +199,12 @@ let accuracyCircle = null;
 
 let totalEntries = 0;
 let totalExits = 0;
+
+let routeStart = null;
+let routeEnd = null;
+let routeLayer = null;
+let routeDistance = null;
+let routeDuration = null;
 
 /* ==========================
 SAVE
@@ -399,7 +401,144 @@ drawGeofences();
 renderSidebar();
 
 }
+/* ==========================
+ROUTING
+========================== */
 
+async function createRoute(start,end){
+
+try{
+
+const url =
+`https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
+
+const response =
+await fetch(url);
+
+const data =
+await response.json();
+
+if(!data.routes || !data.routes.length){
+
+alert("No route found");
+return;
+
+}
+
+if(routeLayer){
+
+map.removeLayer(routeLayer);
+
+}
+
+routeLayer =
+L.geoJSON(
+data.routes[0].geometry,
+{
+style:{
+color:"blue",
+weight:5
+}
+}
+).addTo(map);
+
+map.fitBounds(
+routeLayer.getBounds()
+);
+
+routeDistance =
+(data.routes[0].distance/1000)
+.toFixed(1);
+
+routeDuration =
+(data.routes[0].duration/60)
+.toFixed(0);
+
+renderSidebar();
+
+}
+catch(err){
+
+console.error(err);
+
+alert("Routing failed");
+
+}
+
+}
+
+function selectRouteLocation(id){
+
+const place =
+places.find(
+p=>p.id===id
+);
+
+if(!place) return;
+
+if(!routeStart){
+
+routeStart = place;
+
+renderSidebar();
+
+return;
+
+}
+
+if(!routeEnd){
+
+routeEnd = place;
+
+createRoute(
+routeStart,
+routeEnd
+);
+
+renderSidebar();
+
+return;
+
+}
+
+routeStart = place;
+
+routeEnd = null;
+
+routeDistance = null;
+routeDuration = null;
+
+if(routeLayer){
+
+map.removeLayer(routeLayer);
+
+routeLayer = null;
+
+}
+
+renderSidebar();
+
+}
+
+function clearRoute(){
+
+routeStart = null;
+routeEnd = null;
+
+routeDistance = null;
+routeDuration = null;
+
+if(routeLayer){
+
+map.removeLayer(routeLayer);
+
+routeLayer = null;
+
+}
+
+renderSidebar();
+
+}
 /* ==========================
 RESTORE
 ========================== */
@@ -526,6 +665,15 @@ ${place.lng}
 Zoom
 </button>
 
+<button
+onclick="
+selectRouteLocation(
+${place.id}
+)
+">
+Select
+</button>
+
 </div>
 
 </div>
@@ -623,12 +771,21 @@ Restore
 </div>
 `).join('')
 }
+/* ==========================
+SIDEBAR
+========================== */
 
-</div>
+function renderSidebar(){
 
-`;
+const sidebar =
+document.getElementById(
+'sidebar'
+);
 
-}
+sidebar.innerHTML = `
+
+<div class="card">
+
 
 /* ==========================
 ADD OBJECTS
@@ -828,13 +985,7 @@ insideState[g.id]=true;
 totalEntries++;
 
 addFeed(
-
-businessMode
-?
-'CHECK-IN: ' + g.name
-:
 'Entered ' + g.name
-
 );
 
 }
@@ -849,15 +1000,8 @@ insideState[g.id]=false;
 totalExits++;
 
 addFeed(
-
-businessMode
-?
-'CHECK-OUT: ' + g.name
-:
 'Left ' + g.name
-
 );
-
 }
 
 });
@@ -917,27 +1061,7 @@ totalExits++;
 }
 
 });
-document
-.getElementById(
-'businessBtn'
-)
-.onclick = ()=>{
 
-businessMode =
-!businessMode;
-
-document
-.getElementById(
-'businessBtn'
-)
-.innerText =
-businessMode
-?
-'Business Mode ON'
-:
-'Business Mode OFF';
-
-};
 </script>
 
 </body>
