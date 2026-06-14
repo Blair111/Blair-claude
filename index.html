@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Geo Platform FIXED</title>
+<title>Geo Platform Stable FINAL</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -52,7 +52,7 @@ cursor:pointer;
 <body>
 
 <div id="wrap">
-<div id="sidebar">Loading...</div>
+<div id="sidebar">Booting...</div>
 <div id="map"></div>
 </div>
 
@@ -61,20 +61,21 @@ cursor:pointer;
 
 <script>
 
-/* ================= SAFE START ================= */
+/* ================================
+1. SAFE GLOBAL STATE (ALWAYS INIT)
+================================ */
+
+let places = [];
+let geofences = [];
+let feed = [];
+let inside = {};
 
 let supabase = null;
+let backendReady = false;
 
-try {
-supabase = window.supabase.createClient(
-"YOUR_SUPABASE_URL",
-"YOUR_SUPABASE_ANON_KEY"
-);
-} catch (e) {
-console.log("Supabase init failed", e);
-}
-
-/* ================= MAP ALWAYS LOADS ================= */
+/* ================================
+2. INIT MAP IMMEDIATELY (NO WAITING)
+================================ */
 
 const map = L.map('map').setView([55.9533,-3.1883],13);
 
@@ -82,23 +83,30 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 attribution:'© OpenStreetMap'
 }).addTo(map);
 
-/* ================= SAFE STATE ================= */
+/* ================================
+3. SAFE SUPABASE INIT
+================================ */
 
-let places = [];
-let geofences = [];
-let feed = [];
-let inside = {};
+try {
+supabase = window.supabase.createClient(
+"YOUR_SUPABASE_URL",
+"YOUR_SUPABASE_ANON_KEY"
+);
+backendReady = true;
+} catch (e) {
+console.log("Supabase disabled:", e);
+backendReady = false;
+}
 
-let userMarker = null;
-let accuracyCircle = null;
+/* ================================
+4. LOAD DATA (NON-BLOCKING)
+================================ */
 
-/* ================= SAFE LOAD ================= */
-
-async function load(){
+async function loadData(){
 
 try {
 
-if(!supabase){
+if(!backendReady){
 render();
 return;
 }
@@ -114,35 +122,44 @@ geofences = g?.data || [];
 feed = f?.data || [];
 
 } catch(err){
-console.log("LOAD ERROR:",err);
+console.log("Load failed (ignored):", err);
 }
 
 render();
 draw();
 }
 
-load();
+/* call but NEVER block UI */
+loadData();
 
-/* ================= SAFE SAVE ================= */
+/* ================================
+5. SAFE FEED
+================================ */
 
 async function addFeed(text){
 
+feed.unshift({ text });
+
+if(feed.length > 50) feed.pop();
+
 try {
-if(supabase){
+if(backendReady){
 await supabase.from("feed").insert([{text}]);
 }
 } catch(e){
 console.log(e);
 }
 
-feed.unshift({text});
 render();
 }
 
-/* ================= DISTANCE ================= */
+/* ================================
+6. DISTANCE
+================================ */
 
 function distance(a,b,c,d){
 const R=6371000;
+
 const dLat=(c-a)*Math.PI/180;
 const dLng=(d-b)*Math.PI/180;
 
@@ -155,7 +172,9 @@ Math.sin(dLng/2)**2;
 return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-/* ================= DRAW ================= */
+/* ================================
+7. DRAW MAP ITEMS
+================================ */
 
 let markers=[];
 let circles=[];
@@ -168,32 +187,40 @@ circles.forEach(c=>map.removeLayer(c));
 markers=[];
 circles=[];
 
-/* places */
 for(const p of places){
-if(p.lat==null) continue;
+if(!p.lat) continue;
 
 const m = L.marker([p.lat,p.lng]).addTo(map);
 m.bindPopup(p.name || "Place");
 markers.push(m);
 }
 
-/* geofences */
 for(const g of geofences){
-if(g.lat==null) continue;
+if(!g.lat) continue;
 
 const c = L.circle([g.lat,g.lng],{
-radius:g.radius||100,
+radius:g.radius || 200,
 color:"orange",
 fillOpacity:0.2
 }).addTo(map);
 
 circles.push(c);
 }
+
 }
 
-/* ================= TRACKING ================= */
+/* ================================
+8. TRACKING (SAFE)
+================================ */
+
+let userMarker=null;
+let accuracyCircle=null;
+let tracking=false;
 
 function startTracking(){
+
+if(tracking) return;
+tracking = true;
 
 if(!navigator.geolocation){
 alert("No GPS");
@@ -222,7 +249,7 @@ color:"#3b82f6",
 fillOpacity:0.1
 }).addTo(map);
 
-/* SAFE GEO ENGINE */
+/* GEO ENGINE */
 for(const g of geofences){
 
 if(!g.lat) continue;
@@ -243,12 +270,13 @@ await addFeed("Left " + g.name);
 
 map.setView([lat,lng],15);
 
-},err=>{
-alert("Location blocked");
 });
+
 }
 
-/* ================= CLICK ================= */
+/* ================================
+9. MAP CLICK
+================================ */
 
 map.on("click",async e=>{
 
@@ -256,6 +284,7 @@ const type = prompt("place or geofence");
 if(!type) return;
 
 if(type==="place"){
+
 const name = prompt("name");
 
 places.push({
@@ -286,46 +315,43 @@ await addFeed("Added geofence " + name);
 
 draw();
 render();
+
 });
 
-/* ================= RENDER ================= */
+/* ================================
+10. RENDER (ALWAYS WORKS)
+================================ */
 
 function render(){
 
 const s = document.getElementById("sidebar");
 
-let html = `
+s.innerHTML = `
 <div class="card">
 <button onclick="startTracking()">Start Tracking</button>
 </div>
-`;
 
-/* FEED */
-html += `<div class="card"><b>FEED</b>`;
-
-if(feed.length===0){
-html += `<div>No activity yet</div>`;
-}else{
-for(const f of feed){
-html += `<div>${f.text}</div>`;
-}
-}
-
-html += `</div>`;
-
-/* STATUS */
-html += `
 <div class="card">
-Supabase: ${supabase ? "Connected" : "Offline"}
-<br>
-Places: ${places.length}
-<br>
+<b>Status</b><br>
+Backend: ${backendReady ? "Supabase ON" : "Offline"}<br>
+Places: ${places.length}<br>
 Geofences: ${geofences.length}
+</div>
+
+<div class="card">
+<b>Feed</b><br>
+${feed.length===0 ? "No activity yet" : feed.map(f=>`<div>${f.text}</div>`).join("")}
 </div>
 `;
 
-s.innerHTML = html;
 }
+
+/* ================================
+11. FIRST RENDER (CRITICAL)
+================================ */
+
+render();
+draw();
 
 </script>
 
