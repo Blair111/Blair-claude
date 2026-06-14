@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Geo Platform Stable</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Geo Platform Supabase</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -50,21 +50,6 @@ margin-top:5px;
 background:#2563eb;
 color:white;
 }
-
-.archive{
-background:#ef4444;
-color:white;
-}
-
-.restore{
-background:#22c55e;
-color:white;
-}
-
-.small{
-font-size:12px;
-opacity:0.8;
-}
 </style>
 </head>
 
@@ -76,8 +61,19 @@ opacity:0.8;
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script>
+
+/* ================= SUPABASE ================= */
+
+const SUPABASE_URL = "YOUR_SUPABASE_URL";
+const SUPABASE_KEY = "YOUR_SUPABASE_ANON_KEY";
+
+const supabase = window.supabase.createClient(
+SUPABASE_URL,
+SUPABASE_KEY
+);
 
 /* ================= MAP ================= */
 
@@ -87,69 +83,130 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 attribution:'© OpenStreetMap'
 }).addTo(map);
 
-/* ================= STORAGE ================= */
-
-let places = JSON.parse(localStorage.getItem("places") || "[]");
-let geofences = JSON.parse(localStorage.getItem("geofences") || "[]");
-let archived = JSON.parse(localStorage.getItem("archived") || "[]");
-let feed = JSON.parse(localStorage.getItem("feed") || "[]");
-let inside = JSON.parse(localStorage.getItem("inside") || "{}");
-
 /* ================= STATE ================= */
+
+let places = [];
+let geofences = [];
+let feed = [];
+let inside = {};
 
 let userMarker = null;
 let accuracyCircle = null;
-let tracking = false;
 
-/* ================= SAVE ================= */
+/* ================= LOAD DATA ================= */
 
-function save(){
-localStorage.setItem("places", JSON.stringify(places));
-localStorage.setItem("geofences", JSON.stringify(geofences));
-localStorage.setItem("archived", JSON.stringify(archived));
-localStorage.setItem("feed", JSON.stringify(feed));
-localStorage.setItem("inside", JSON.stringify(inside));
+async function loadData(){
+
+const p = await supabase.from("places").select("*");
+const g = await supabase.from("geofences").select("*");
+const f = await supabase.from("feed").select("*");
+
+places = p.data || [];
+geofences = g.data || [];
+feed = f.data || [];
+
+render();
+drawAll();
+
+}
+
+loadData();
+
+/* ================= SAVE FEED ================= */
+
+async function addFeed(text){
+
+await supabase.from("feed").insert([{
+text
+}]);
+
+loadData();
+
+}
+
+/* ================= ADD PLACE ================= */
+
+async function addPlace(name,lat,lng){
+
+await supabase.from("places").insert([{
+name,
+lat,
+lng
+}]);
+
+loadData();
+}
+
+/* ================= ADD GEOFENCE ================= */
+
+async function addGeofence(name,lat,lng,radius){
+
+await supabase.from("geofences").insert([{
+name,
+lat,
+lng,
+radius
+}]);
+
+loadData();
 }
 
 /* ================= DISTANCE ================= */
 
 function distance(a,b,c,d){
-const R=6371000;
 
-const dLat=(c-a)*Math.PI/180;
-const dLng=(d-b)*Math.PI/180;
+const R = 6371000;
+
+const dLat = (c-a)*Math.PI/180;
+const dLng = (d-b)*Math.PI/180;
 
 const x =
 Math.sin(dLat/2)**2 +
-Math.cos(a*Math.PI/180)*
-Math.cos(c*Math.PI/180)*
+Math.cos(a*Math.PI/180) *
+Math.cos(c*Math.PI/180) *
 Math.sin(dLng/2)**2;
 
-return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+return R * 2 * Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-/* ================= FEED ================= */
+/* ================= DRAW ================= */
 
-function addFeed(text){
-feed.unshift({
-time:new Date().toLocaleTimeString(),
-text
-});
+let placeMarkers = [];
+let geoLayers = [];
 
-if(feed.length>50) feed.pop();
+function drawAll(){
 
-save();
-render();
+placeMarkers.forEach(m=>map.removeLayer(m));
+geoLayers.forEach(g=>map.removeLayer(g));
+
+placeMarkers=[];
+geoLayers=[];
+
+/* places */
+for(let p of places){
+const m = L.marker([p.lat,p.lng]).addTo(map);
+m.bindPopup(p.name);
+placeMarkers.push(m);
+}
+
+/* geofences */
+for(let g of geofences){
+const c = L.circle([g.lat,g.lng],{
+radius:g.radius,
+color:"orange",
+fillOpacity:0.2
+}).addTo(map);
+c.bindPopup(g.name);
+geoLayers.push(c);
+}
+
 }
 
 /* ================= TRACKING ================= */
 
 function startTracking(){
 
-if(tracking) return;
-tracking = true;
-
-navigator.geolocation.watchPosition(pos=>{
+navigator.geolocation.watchPosition(async pos=>{
 
 const lat = pos.coords.latitude;
 const lng = pos.coords.longitude;
@@ -175,86 +232,49 @@ fillOpacity:0.1
 for(let g of geofences){
 
 const d = distance(lat,lng,g.lat,g.lng);
-const isInside = d < g.radius;
+const insideNow = d < g.radius;
 
-/* ENTER */
-if(isInside && !inside[g.id]){
+if(insideNow && !inside[g.id]){
 inside[g.id] = true;
-addFeed("Entered " + g.name);
+await addFeed("Entered " + g.name);
 }
 
-/* EXIT */
-if(!isInside && inside[g.id]){
+if(!insideNow && inside[g.id]){
 inside[g.id] = false;
-addFeed("Left " + g.name);
+await addFeed("Left " + g.name);
 }
 
 }
 
 map.setView([lat,lng],15);
 
-save();
-
-},err=>{
-alert("Location denied");
 });
 
 }
 
 /* ================= MAP CLICK ================= */
 
-map.on("click",e=>{
+map.on("click",async e=>{
 
-const type = prompt("type: place / geofence / archive");
+const type = prompt("place or geofence");
 
-if(type==="geofence"){
+if(type==="place"){
 
 const name = prompt("name");
+
+await addPlace(name,e.latlng.lat,e.latlng.lng);
+
+return;
+}
+
+const name = prompt("geofence name");
 const radius = parseInt(prompt("radius","200"));
 
-geofences.push({
-id:Date.now(),
-name,
-lat:e.latlng.lat,
-lng:e.latlng.lng,
-radius
-});
-
-save();
-render();
-return;
-}
-
-if(type==="archive"){
-
-if(geofences.length===0){
-alert("no geofences");
-return;
-}
-
-const g = geofences.pop();
-archived.push(g);
-
-save();
-render();
-return;
-}
-
-/* PLACE */
-
-places.push({
-id:Date.now(),
-name:prompt("name"),
-lat:e.latlng.lat,
-lng:e.latlng.lng
-});
-
-save();
-render();
+await addGeofence(name,e.latlng.lat,e.latlng.lng,radius);
 
 });
 
-/* ================= RENDER ================= */
+/* ================= RENDER SIDEBAR ================= */
 
 function render(){
 
@@ -262,7 +282,7 @@ const s = document.getElementById("sidebar");
 
 let html = "";
 
-/* TRACK */
+/* TRACK BUTTON */
 html += `
 <div class="card">
 <button class="track" onclick="startTracking()">Start Tracking</button>
@@ -272,7 +292,16 @@ html += `
 html += `<div class="card"><b>FEED</b>`;
 
 for(let f of feed){
-html += `<div class="small">${f.time}</div><div>${f.text}</div><hr>`;
+html += `<div>${f.text}</div>`;
+}
+
+html += `</div>`;
+
+/* PLACES */
+html += `<div class="card"><b>Places</b>`;
+
+for(let p of places){
+html += `<div>${p.name}</div>`;
 }
 
 html += `</div>`;
@@ -286,22 +315,9 @@ html += `<div>${g.name} (${g.radius}m)</div>`;
 
 html += `</div>`;
 
-/* ARCHIVE */
-html += `<div class="card"><b>Archived</b>`;
-
-for(let a of archived){
-html += `<div>${a.name}</div>`;
-}
-
-html += `</div>`;
-
 s.innerHTML = html;
 
 }
-
-/* ================= INIT ================= */
-
-render();
 
 </script>
 
