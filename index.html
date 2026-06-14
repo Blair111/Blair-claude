@@ -3,17 +3,51 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Geo Platform FIXED CONNECTION</title>
+<title>Geo SaaS Realtime Platform</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-html,body{margin:0;height:100%;font-family:Arial;}
-#wrap{display:flex;height:100vh;}
-#sidebar{width:340px;background:#111827;color:white;padding:10px;overflow:auto;}
-#map{flex:1;}
-.card{background:#1f2937;padding:10px;margin-bottom:10px;border-radius:8px;}
-button{padding:8px;border:none;border-radius:6px;background:#2563eb;color:white;cursor:pointer;}
+html,body{
+margin:0;
+height:100%;
+font-family:Arial;
+background:#0f172a;
+color:white;
+}
+
+#wrap{
+display:flex;
+height:100vh;
+}
+
+#sidebar{
+width:340px;
+background:#111827;
+padding:10px;
+overflow:auto;
+}
+
+#map{
+flex:1;
+}
+
+.card{
+background:#1f2937;
+padding:10px;
+margin-bottom:10px;
+border-radius:8px;
+}
+
+button{
+padding:8px;
+border:none;
+border-radius:6px;
+background:#2563eb;
+color:white;
+cursor:pointer;
+margin-top:5px;
+}
 </style>
 </head>
 
@@ -25,14 +59,12 @@ button{padding:8px;border:none;border-radius:6px;background:#2563eb;color:white;
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-
-<!-- ✅ PROPER SUPABASE IMPORT (THIS FIXES EVERYTHING) -->
 <script type="module">
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
 /* =========================
-SUPABASE (FIXED)
+SUPABASE CONFIG
 ========================= */
 
 const SUPABASE_URL = "https://ihvutyeambhbynjsjnbw.supabase.co";
@@ -42,14 +74,12 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let backendOK = false;
 
-/* TEST CONNECTION */
-async function testConnection(){
+/* test connection */
+async function testBackend(){
 try {
 const { error } = await supabase.from("places").select("*").limit(1);
 backendOK = !error;
-console.log("Supabase status:", backendOK ? "CONNECTED" : error);
-} catch (e) {
-console.log("Supabase failed:", e);
+} catch {
 backendOK = false;
 }
 }
@@ -73,8 +103,8 @@ let geofences = [];
 let feed = [];
 let inside = {};
 
-let userMarker=null;
-let accuracyCircle=null;
+let userMarker = null;
+let accuracyCircle = null;
 
 /* =========================
 LOAD DATA
@@ -82,12 +112,9 @@ LOAD DATA
 
 async function loadData(){
 
-await testConnection();
+await testBackend();
 
-if(!backendOK){
-render();
-return;
-}
+if(backendOK){
 
 const p = await supabase.from("places").select("*");
 const g = await supabase.from("geofences").select("*");
@@ -97,11 +124,43 @@ places = p.data || [];
 geofences = g.data || [];
 feed = f.data || [];
 
+}
+
 render();
 draw();
 }
 
-loadData();
+/* =========================
+REALTIME
+========================= */
+
+function enableRealtime(){
+
+supabase
+.channel("feed")
+.on("postgres_changes",
+{ event:"*", schema:"public", table:"feed" },
+()=> loadData()
+)
+.subscribe();
+
+supabase
+.channel("places")
+.on("postgres_changes",
+{ event:"*", schema:"public", table:"places" },
+()=> loadData()
+)
+.subscribe();
+
+supabase
+.channel("geofences")
+.on("postgres_changes",
+{ event:"*", schema:"public", table:"geofences" },
+()=> loadData()
+)
+.subscribe();
+
+}
 
 /* =========================
 FEED
@@ -109,12 +168,12 @@ FEED
 
 async function addFeed(text){
 
-feed.unshift({text});
+feed.unshift({ text });
 
 if(feed.length>50) feed.pop();
 
 if(backendOK){
-await supabase.from("feed").insert([{text}]);
+await supabase.from("feed").insert([{ text }]);
 }
 
 render();
@@ -125,12 +184,14 @@ DISTANCE
 ========================= */
 
 function distance(a,b,c,d){
+
 const R=6371000;
+
 const dLat=(c-a)*Math.PI/180;
 const dLng=(d-b)*Math.PI/180;
 
-const x =
-Math.sin(dLat/2)**2 +
+const x=
+Math.sin(dLat/2)**2+
 Math.cos(a*Math.PI/180)*
 Math.cos(c*Math.PI/180)*
 Math.sin(dLng/2)**2;
@@ -153,11 +214,13 @@ circles.forEach(c=>map.removeLayer(c));
 markers=[];
 circles=[];
 
+/* places */
 for(const p of places){
 if(!p.lat) continue;
 markers.push(L.marker([p.lat,p.lng]).addTo(map).bindPopup(p.name));
 }
 
+/* geofences */
 for(const g of geofences){
 if(!g.lat) continue;
 circles.push(
@@ -231,9 +294,12 @@ const type=prompt("place or geofence");
 if(!type) return;
 
 if(type==="place"){
+
+const name=prompt("name");
+
 places.push({
 id:Date.now(),
-name:prompt("name"),
+name,
 lat:e.latlng.lat,
 lng:e.latlng.lng
 });
@@ -245,12 +311,15 @@ render();
 return;
 }
 
+const name=prompt("geofence name");
+const radius=parseInt(prompt("radius","200"));
+
 geofences.push({
 id:Date.now(),
-name:prompt("name"),
+name,
 lat:e.latlng.lat,
 lng:e.latlng.lng,
-radius:parseInt(prompt("radius","200"))
+radius
 });
 
 await addFeed("Added geofence");
@@ -266,9 +335,10 @@ RENDER
 
 function render(){
 
-document.getElementById("sidebar").innerHTML = `
+document.getElementById("sidebar").innerHTML=`
 <div class="card">
 <button onclick="startTracking()">Start Tracking</button>
+<button onclick="enableRealtime()">Enable Realtime</button>
 </div>
 
 <div class="card">
@@ -280,7 +350,7 @@ Geofences: ${geofences.length}
 
 <div class="card">
 <b>Feed</b><br>
-${feed.length ? feed.map(f=>`<div>${f.text}</div>`).join("") : "No activity yet"}
+${feed.length?feed.map(f=>`<div>${f.text}</div>`).join(""):"No activity yet"}
 </div>
 `;
 
@@ -290,6 +360,8 @@ ${feed.length ? feed.map(f=>`<div>${f.text}</div>`).join("") : "No activity yet"
 BOOT
 ========================= */
 
+await loadData();
+enableRealtime();
 render();
 draw();
 
