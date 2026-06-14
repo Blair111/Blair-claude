@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Geo Stable Fix</title>
+<title>Geo SaaS Step 2 Safe</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -46,7 +46,12 @@ border-radius:6px;
 background:#2563eb;
 color:white;
 cursor:pointer;
-margin-top:5px;
+margin:3px 0;
+}
+
+.small{
+font-size:12px;
+opacity:0.8;
 }
 </style>
 </head>
@@ -63,7 +68,7 @@ margin-top:5px;
 <script type="module">
 
 /* =========================
-MAP
+MAP (UNCHANGED)
 ========================= */
 
 const map = L.map('map').setView([55.9533,-3.1883],13);
@@ -73,7 +78,7 @@ attribution:'© OpenStreetMap'
 }).addTo(map);
 
 /* =========================
-STATE (IMPORTANT — DO NOT BREAK)
+STATE (UNCHANGED CORE)
 ========================= */
 
 let places = [];
@@ -81,11 +86,11 @@ let geofences = [];
 let feed = [];
 let inside = {};
 
-let userMarker = null;
-let accuracyCircle = null;
+let entries = 0;
+let exits = 0;
 
 /* =========================
-SUPABASE (OPTIONAL SAFE LAYER)
+SUPABASE (SAFE)
 ========================= */
 
 let supabase = null;
@@ -106,20 +111,19 @@ supabase = createClient(
 const test = await supabase.from("places").select("*").limit(1);
 backendOK = !test.error;
 
-}catch(e){
-console.log("Supabase offline");
+}catch{
 backendOK = false;
 }
 
 }
 
 /* =========================
-LOAD (SAFE + DOES NOT BREAK GEO)
+LOAD (SAFE)
 ========================= */
 
 async function load(){
 
-if(backendOK && supabase){
+if(backendOK){
 
 const p = await supabase.from("places").select("*");
 const g = await supabase.from("geofences").select("*");
@@ -137,16 +141,21 @@ draw();
 }
 
 /* =========================
-FEED
+FEED (IMPROVED STRUCTURE)
 ========================= */
 
-async function addFeed(text){
+async function addFeed(type,text){
 
-feed.unshift({text});
+feed.unshift({
+type,
+text,
+time:new Date().toLocaleTimeString()
+});
+
 if(feed.length>80) feed.pop();
 
-if(backendOK && supabase){
-await supabase.from("feed").insert([{text}]);
+if(backendOK){
+await supabase.from("feed").insert([{type,text}]);
 }
 
 render();
@@ -154,40 +163,39 @@ render();
 }
 
 /* =========================
-DISTANCE (CORE GEO ENGINE)
+DISTANCE (UNCHANGED)
 ========================= */
 
 function distance(a,b,c,d){
-const R = 6371000;
+const R=6371000;
 
-const dLat = (c-a)*Math.PI/180;
-const dLng = (d-b)*Math.PI/180;
+const dLat=(c-a)*Math.PI/180;
+const dLng=(d-b)*Math.PI/180;
 
-const x =
-Math.sin(dLat/2)**2 +
-Math.cos(a*Math.PI/180) *
-Math.cos(c*Math.PI/180) *
+const x=
+Math.sin(dLat/2)**2+
+Math.cos(a*Math.PI/180)*
+Math.cos(c*Math.PI/180)*
 Math.sin(dLng/2)**2;
 
-return R * 2 * Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
 /* =========================
-DRAW (CRITICAL FIX AREA)
+DRAW (UNCHANGED)
 ========================= */
 
-let markers = [];
-let circles = [];
+let markers=[];
+let circles=[];
 
 function draw(){
 
 markers.forEach(m=>map.removeLayer(m));
 circles.forEach(c=>map.removeLayer(c));
 
-markers = [];
-circles = [];
+markers=[];
+circles=[];
 
-/* places */
 for(const p of places){
 if(!p.lat) continue;
 
@@ -198,16 +206,15 @@ L.marker([p.lat,p.lng])
 );
 }
 
-/* 🔵 GEOFENCES (RESTORED + SAFE) */
 for(const g of geofences){
 if(!g.lat) continue;
 
 circles.push(
 L.circle([g.lat,g.lng],{
-radius:g.radius || 200,
+radius:g.radius||200,
 color:"#3b82f6",
 fillColor:"#3b82f6",
-fillOpacity:0.25
+fillOpacity:0.2
 }).addTo(map)
 );
 }
@@ -218,6 +225,9 @@ fillOpacity:0.25
 TRACKING (UNCHANGED CORE LOGIC)
 ========================= */
 
+let userMarker=null;
+let accuracyCircle=null;
+
 function startTracking(){
 
 if(!navigator.geolocation){
@@ -227,19 +237,19 @@ return;
 
 navigator.geolocation.watchPosition(async pos=>{
 
-const lat = pos.coords.latitude;
-const lng = pos.coords.longitude;
-const acc = pos.coords.accuracy;
+const lat=pos.coords.latitude;
+const lng=pos.coords.longitude;
+const acc=pos.coords.accuracy;
 
 if(!userMarker){
-userMarker = L.marker([lat,lng]).addTo(map);
+userMarker=L.marker([lat,lng]).addTo(map);
 }
 
 userMarker.setLatLng([lat,lng]);
 
 if(accuracyCircle) map.removeLayer(accuracyCircle);
 
-accuracyCircle = L.circle([lat,lng],{
+accuracyCircle=L.circle([lat,lng],{
 radius:acc,
 color:"#3b82f6",
 fillOpacity:0.1
@@ -247,17 +257,19 @@ fillOpacity:0.1
 
 for(const g of geofences){
 
-const d = distance(lat,lng,g.lat,g.lng);
-const insideNow = d < g.radius;
+const d=distance(lat,lng,g.lat,g.lng);
+const insideNow=d<g.radius;
 
 if(insideNow && !inside[g.id]){
-inside[g.id] = true;
-await addFeed("Entered " + g.name);
+inside[g.id]=true;
+entries++;
+await addFeed("ENTER",g.name);
 }
 
 if(!insideNow && inside[g.id]){
-inside[g.id] = false;
-await addFeed("Left " + g.name);
+inside[g.id]=false;
+exits++;
+await addFeed("EXIT",g.name);
 }
 
 }
@@ -269,15 +281,14 @@ map.setView([lat,lng],15);
 }
 
 /* =========================
-MAP CLICK (SAFE ADD)
+MAP CLICK (IMPROVED UX ONLY)
 ========================= */
 
 map.on("click",async e=>{
 
-const type = prompt("place or geofence");
-if(!type) return;
+const choice = confirm("OK = Place | Cancel = Geofence");
 
-if(type === "place"){
+if(choice){
 
 places.push({
 id:Date.now(),
@@ -286,12 +297,9 @@ lat:e.latlng.lat,
 lng:e.latlng.lng
 });
 
-await addFeed("Added place");
+await addFeed("PLACE","Added place");
 
-draw();
-render();
-return;
-}
+}else{
 
 geofences.push({
 id:Date.now(),
@@ -301,7 +309,9 @@ lng:e.latlng.lng,
 radius:200
 });
 
-await addFeed("Added geofence");
+await addFeed("GEOFENCE","Added geofence");
+
+}
 
 draw();
 render();
@@ -309,35 +319,42 @@ render();
 });
 
 /* =========================
-UI
+RENDER (CLEANER UI ONLY)
 ========================= */
 
 function render(){
 
-document.getElementById("sidebar").innerHTML = `
+document.getElementById("sidebar").innerHTML=`
 <div class="card">
 <button id="trackBtn">Start Tracking</button>
 </div>
 
 <div class="card">
-<b>Status</b><br>
-Backend: ${backendOK ? "CONNECTED" : "LOCAL MODE"}<br>
+<b>Stats</b><br>
 Places: ${places.length}<br>
-Geofences: ${geofences.length}
+Geofences: ${geofences.length}<br>
+Entries: ${entries}<br>
+Exits: ${exits}
 </div>
 
 <div class="card">
 <b>Feed</b><br>
-${feed.length ? feed.map(f=>`<div>${f.text}</div>`).join("") : "No activity yet"}
+${feed.length ? feed.map(f=>`
+<div style="margin-bottom:6px">
+<b>${f.type}</b><br>
+${f.text}<br>
+<span class="small">${f.time || ""}</span>
+</div>
+`).join("") : "No activity yet"}
 </div>
 `;
 
-document.getElementById("trackBtn").onclick = startTracking;
+document.getElementById("trackBtn").onclick=startTracking;
 
 }
 
 /* =========================
-BOOT (IMPORTANT FIX)
+BOOT (UNCHANGED SAFE)
 ========================= */
 
 await initSupabase();
