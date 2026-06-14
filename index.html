@@ -3,17 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GeoPlatform Stable Full</title>
+<title>GeoSocial v1</title>
 
-<link rel="icon" href="data:,">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
 html,body{
 margin:0;
 height:100%;
-font-family:Arial,sans-serif;
-background:#0f172a;
+font-family:Arial;
+background:#0b1220;
 overflow:hidden;
 }
 
@@ -43,7 +42,7 @@ height:calc(100vh - 50px);
 }
 
 #sidebar{
-width:320px;
+width:340px;
 background:#111827;
 color:white;
 overflow:auto;
@@ -65,7 +64,7 @@ margin-bottom:10px;
 .section{
 font-size:12px;
 opacity:0.7;
-margin-bottom:6px;
+margin-bottom:8px;
 }
 
 .item{
@@ -80,12 +79,8 @@ font-size:12px;
 opacity:0.7;
 }
 
-.row{
-display:flex;
-gap:6px;
-margin-top:6px;
-}
-
+.enter{color:#22c55e;font-weight:bold;}
+.exit{color:#ef4444;font-weight:bold;}
 </style>
 </head>
 
@@ -93,7 +88,7 @@ margin-top:6px;
 
 <div id="topbar">
 <button onclick="startTracking()">Track</button>
-<span>GeoPlatform</span>
+<span>GeoSocial v1</span>
 </div>
 
 <div id="container">
@@ -107,48 +102,70 @@ margin-top:6px;
 
 /* ================= MAP ================= */
 
-const map = L.map('map').setView([55.9533, -3.1883], 13);
+const map = L.map('map').setView([55.9533,-3.1883],13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 attribution:'© OpenStreetMap'
 }).addTo(map);
 
 /* ================= DATA ================= */
 
-let places = JSON.parse(localStorage.getItem("places") || "[]");
-let geofences = JSON.parse(localStorage.getItem("geofences") || "[]");
+let places = JSON.parse(localStorage.getItem("places")||"[]");
+let geofences = JSON.parse(localStorage.getItem("geofences")||"[]");
+let feed = JSON.parse(localStorage.getItem("feed")||"[]");
 
-let placeMarkers = [];
-let fenceLayers = [];
+/* keeps track of whether user is inside zone */
+let insideState = JSON.parse(localStorage.getItem("insideState")||"{}");
 
-let routeA = null;
-let routeB = null;
-let routeLine = null;
+/* ================= LAYERS ================= */
+
+let placeMarkers=[];
+let fenceLayers=[];
+let userMarker=null;
+let accuracyCircle=null;
 
 /* ================= SAVE ================= */
 
 function save(){
-localStorage.setItem("places", JSON.stringify(places));
-localStorage.setItem("geofences", JSON.stringify(geofences));
+localStorage.setItem("places",JSON.stringify(places));
+localStorage.setItem("geofences",JSON.stringify(geofences));
+localStorage.setItem("feed",JSON.stringify(feed));
+localStorage.setItem("insideState",JSON.stringify(insideState));
 }
 
 /* ================= DIST ================= */
 
-function dist(a,b,c,d){
-const R = 6371000;
-const dLat = (c-a)*Math.PI/180;
-const dLng = (d-b)*Math.PI/180;
+function distance(a,b,c,d){
+const R=6371000;
+const dLat=(c-a)*Math.PI/180;
+const dLng=(d-b)*Math.PI/180;
 
-const x =
-Math.sin(dLat/2)**2 +
-Math.cos(a*Math.PI/180) *
-Math.cos(c*Math.PI/180) *
+const x=
+Math.sin(dLat/2)**2+
+Math.cos(a*Math.PI/180)*
+Math.cos(c*Math.PI/180)*
 Math.sin(dLng/2)**2;
 
 return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-/* ================= PLACES ================= */
+/* ================= FEED ================= */
+
+function addFeed(type,text){
+
+feed.unshift({
+time:new Date().toLocaleTimeString(),
+type,
+text
+});
+
+if(feed.length>80) feed.pop();
+
+save();
+render();
+}
+
+/* ================= DRAW ================= */
 
 function drawPlaces(){
 
@@ -156,13 +173,11 @@ placeMarkers.forEach(m=>map.removeLayer(m));
 placeMarkers=[];
 
 places.forEach(p=>{
-const m = L.marker([p.lat,p.lng]).addTo(map);
+const m=L.marker([p.lat,p.lng]).addTo(map);
 m.bindPopup(p.name);
 placeMarkers.push(m);
 });
 }
-
-/* ================= GEOFENCES ================= */
 
 function drawGeofences(){
 
@@ -170,7 +185,7 @@ fenceLayers.forEach(f=>map.removeLayer(f));
 fenceLayers=[];
 
 geofences.forEach(g=>{
-const c = L.circle([g.lat,g.lng],{
+const c=L.circle([g.lat,g.lng],{
 radius:g.radius,
 color:"orange",
 fillOpacity:0.2
@@ -181,139 +196,80 @@ fenceLayers.push(c);
 });
 }
 
-/* ================= ROUTING ================= */
-
-async function buildRoute(){
-
-if(!routeA || !routeB) return;
-
-const url =
-`https://router.project-osrm.org/route/v1/driving/${routeA.lng},${routeA.lat};${routeB.lng},${routeB.lat}?overview=full&geometries=geojson`;
-
-const res = await fetch(url);
-const data = await res.json();
-
-if(routeLine) map.removeLayer(routeLine);
-
-routeLine = L.geoJSON(data.routes[0].geometry,{
-color:"blue",
-weight:5
-}).addTo(map);
-
-map.fitBounds(routeLine.getBounds());
-}
-
-/* ================= SIDEBAR ================= */
-
-function render(){
-
-const s = document.getElementById("sidebar");
-
-let html = "";
-
-/* ROUTE */
-html += `
-<div class="card">
-<div class="section">ROUTE</div>
-<div>A: ${routeA ? routeA.name : "none"}</div>
-<div>B: ${routeB ? routeB.name : "none"}</div>
-</div>
-`;
-
-/* PLACES */
-html += `
-<div class="card">
-<div class="section">PLACES</div>
-`;
-
-places.forEach(p=>{
-html += `
-<div class="item">
-<b>${p.name}</b>
-<div class="row">
-<button onclick="map.setView([${p.lat},${p.lng}],15)">Zoom</button>
-<button onclick="setRoute(${p.id})">Route</button>
-</div>
-</div>
-`;
-});
-
-html += `</div>`;
-
-/* GEOFENCES */
-html += `
-<div class="card">
-<div class="section">GEOFENCES</div>
-`;
-
-geofences.forEach(g=>{
-html += `
-<div class="item">
-<b>${g.name}</b>
-<div class="small">${g.radius}m</div>
-</div>
-`;
-});
-
-html += `</div>`;
-
-s.innerHTML = html;
-}
-
-/* ================= ROUTE SELECT ================= */
-
-function setRoute(id){
-
-const p = places.find(x=>x.id===id);
-if(!p) return;
-
-if(!routeA){
-routeA = p;
-render();
-return;
-}
-
-if(!routeB){
-routeB = p;
-buildRoute();
-render();
-return;
-}
-
-routeA = p;
-routeB = null;
-
-if(routeLine){
-map.removeLayer(routeLine);
-routeLine=null;
-}
-
-render();
-}
-
-/* ================= TRACKING ================= */
+/* ================= TRACKING ENGINE ================= */
 
 function startTracking(){
 
+if(!navigator.geolocation){
+alert("No GPS");
+return;
+}
+
 navigator.geolocation.watchPosition(pos=>{
 
-const lat = pos.coords.latitude;
-const lng = pos.coords.longitude;
+const lat=pos.coords.latitude;
+const lng=pos.coords.longitude;
+const acc=pos.coords.accuracy;
 
-L.marker([lat,lng]).addTo(map);
+/* user marker */
+if(!userMarker){
+userMarker=L.marker([lat,lng]).addTo(map);
+}
 
-}, err=>{
-alert("Location blocked");
+userMarker.setLatLng([lat,lng]);
+
+/* accuracy circle */
+if(accuracyCircle) map.removeLayer(accuracyCircle);
+
+accuracyCircle=L.circle([lat,lng],{
+radius:acc,
+color:"#3b82f6",
+fillOpacity:0.1
+}).addTo(map);
+
+/* GEOFENCE DETECTION */
+geofences.forEach(g=>{
+
+const d=distance(lat,lng,g.lat,g.lng);
+const inside=d<g.radius;
+
+/* ENTER */
+if(inside && !insideState[g.id]){
+insideState[g.id]=true;
+
+addFeed(
+"ENTER",
+"Entered " + g.name
+);
+}
+
+/* EXIT */
+if(!inside && insideState[g.id]){
+insideState[g.id]=false;
+
+addFeed(
+"EXIT",
+"Left " + g.name
+);
+}
+
 });
 
+map.setView([lat,lng],15);
+
+save();
+
+},err=>{
+alert("Location blocked");
+});
 }
 
 /* ================= MAP CLICK ================= */
 
-map.on("click", e=>{
+map.on("click",e=>{
 
-const type = prompt("place or geofence");
-if(!type) return;
+const type=prompt("place or geofence");
+if(!type)return;
 
 if(type==="place"){
 
@@ -328,7 +284,6 @@ save();
 drawPlaces();
 render();
 return;
-
 }
 
 geofences.push({
@@ -344,6 +299,75 @@ drawGeofences();
 render();
 
 });
+
+/* ================= SIDEBAR ================= */
+
+function render(){
+
+const s=document.getElementById("sidebar");
+
+let html="";
+
+/* FEED */
+html+=`
+<div class="card">
+<div class="section">LIVE FEED</div>
+`;
+
+if(feed.length===0){
+html+="No activity yet";
+}else{
+
+feed.forEach(f=>{
+html+=`
+<div class="item">
+<div class="${f.type==="ENTER"?"enter":"exit"}">
+${f.type}
+</div>
+<div class="small">${f.time}</div>
+<div>${f.text}</div>
+</div>
+`;
+});
+}
+
+html+=`</div>`;
+
+/* PLACES */
+html+=`
+<div class="card">
+<div class="section">PLACES</div>
+`;
+
+places.forEach(p=>{
+html+=`
+<div class="item">
+<b>${p.name}</b>
+</div>
+`;
+});
+
+html+=`</div>`;
+
+/* GEOFENCES */
+html+=`
+<div class="card">
+<div class="section">GEOFENCES</div>
+`;
+
+geofences.forEach(g=>{
+html+=`
+<div class="item">
+<b>${g.name}</b>
+<div class="small">${g.radius}m</div>
+</div>
+`;
+});
+
+html+=`</div>`;
+
+s.innerHTML=html;
+}
 
 /* ================= INIT ================= */
 
