@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Geo SaaS Blue Version</title>
+<title>Geo SaaS Stable Step 1</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -54,7 +54,7 @@ margin-top:5px;
 <body>
 
 <div id="wrap">
-<div id="sidebar">Loading...</div>
+<div id="sidebar">Booting...</div>
 <div id="map"></div>
 </div>
 
@@ -75,8 +75,8 @@ const supabase = createClient(
 
 let backendOK = false;
 
-/* test backend */
-async function testBackend(){
+/* check backend */
+async function checkBackend(){
 try{
 const { error } = await supabase.from("places").select("*").limit(1);
 backendOK = !error;
@@ -108,23 +108,25 @@ let userMarker = null;
 let accuracyCircle = null;
 
 /* =========================
-LOAD
+LOAD EVERYTHING (STEP 1 CORE)
 ========================= */
 
-async function load(){
+async function loadAll(){
 
-await testBackend();
+await checkBackend();
 
 if(backendOK){
 
-const p = await supabase.from("places").select("*");
-const g = await supabase.from("geofences").select("*");
-const f = await supabase.from("feed").select("*");
+const p = await supabase.from("places").select("*").order("id", { ascending: false });
+const g = await supabase.from("geofences").select("*").order("id", { ascending: false });
+const f = await supabase.from("feed").select("*").order("id", { ascending: false });
 
 places = p.data || [];
 geofences = g.data || [];
 feed = f.data || [];
 
+} else {
+console.log("Backend offline fallback mode");
 }
 
 render();
@@ -132,49 +134,19 @@ draw();
 }
 
 /* =========================
-REALTIME
-========================= */
-
-let realtimeEnabled = false;
-let channel = null;
-
-function enableRealtime(){
-
-if(realtimeEnabled) return;
-
-channel = supabase.channel("live");
-
-channel
-.on("postgres_changes",
-{ event:"*", schema:"public", table:"feed" },
-()=>load()
-)
-.on("postgres_changes",
-{ event:"*", schema:"public", table:"places" },
-()=>load()
-)
-.on("postgres_changes",
-{ event:"*", schema:"public", table:"geofences" },
-()=>load()
-)
-.subscribe();
-
-realtimeEnabled = true;
-console.log("Realtime enabled");
-}
-
-/* =========================
-FEED
+FEED (STABLE)
 ========================= */
 
 async function addFeed(text){
 
-feed.unshift({text});
+const item = { text };
 
-if(feed.length>50) feed.pop();
+feed.unshift(item);
+
+if(feed.length > 80) feed.pop();
 
 if(backendOK){
-await supabase.from("feed").insert([{text}]);
+await supabase.from("feed").insert([{ text }]);
 }
 
 render();
@@ -185,82 +157,88 @@ DISTANCE
 ========================= */
 
 function distance(a,b,c,d){
-const R=6371000;
-const dLat=(c-a)*Math.PI/180;
-const dLng=(d-b)*Math.PI/180;
+const R = 6371000;
 
-const x=
-Math.sin(dLat/2)**2+
-Math.cos(a*Math.PI/180)*
-Math.cos(c*Math.PI/180)*
+const dLat = (c-a) * Math.PI/180;
+const dLng = (d-b) * Math.PI/180;
+
+const x =
+Math.sin(dLat/2)**2 +
+Math.cos(a*Math.PI/180) *
+Math.cos(c*Math.PI/180) *
 Math.sin(dLng/2)**2;
 
-return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
 }
 
 /* =========================
-DRAW
+DRAW MAP
 ========================= */
 
-let markers=[];
-let circles=[];
+let markers = [];
+let circles = [];
 
 function draw(){
 
 markers.forEach(m=>map.removeLayer(m));
 circles.forEach(c=>map.removeLayer(c));
 
-markers=[];
-circles=[];
+markers = [];
+circles = [];
 
+/* places */
 for(const p of places){
 if(!p.lat) continue;
-markers.push(L.marker([p.lat,p.lng]).addTo(map).bindPopup(p.name));
+
+markers.push(
+L.marker([p.lat,p.lng])
+.addTo(map)
+.bindPopup(p.name || "Place")
+);
 }
 
-/* 🔵 BLUE GEOFENCES */
+/* geofences */
 for(const g of geofences){
 if(!g.lat) continue;
 
 circles.push(
 L.circle([g.lat,g.lng],{
-radius:g.radius||200,
-color:"#3b82f6",      // BLUE BORDER
-fillColor:"#3b82f6",  // BLUE FILL
+radius:g.radius || 200,
+color:"#3b82f6",
+fillColor:"#3b82f6",
 fillOpacity:0.2
 }).addTo(map)
 );
-
 }
 
 }
 
 /* =========================
-TRACKING
+TRACKING (UNCHANGED CORE)
 ========================= */
 
 function startTracking(){
 
 if(!navigator.geolocation){
-alert("No GPS");
+alert("GPS not supported");
 return;
 }
 
 navigator.geolocation.watchPosition(async pos=>{
 
-const lat=pos.coords.latitude;
-const lng=pos.coords.longitude;
-const acc=pos.coords.accuracy;
+const lat = pos.coords.latitude;
+const lng = pos.coords.longitude;
+const acc = pos.coords.accuracy;
 
 if(!userMarker){
-userMarker=L.marker([lat,lng]).addTo(map);
+userMarker = L.marker([lat,lng]).addTo(map);
 }
 
 userMarker.setLatLng([lat,lng]);
 
 if(accuracyCircle) map.removeLayer(accuracyCircle);
 
-accuracyCircle=L.circle([lat,lng],{
+accuracyCircle = L.circle([lat,lng],{
 radius:acc,
 color:"#3b82f6",
 fillOpacity:0.1
@@ -270,17 +248,17 @@ for(const g of geofences){
 
 if(!g.lat) continue;
 
-const d=distance(lat,lng,g.lat,g.lng);
-const insideNow=d<g.radius;
+const d = distance(lat,lng,g.lat,g.lng);
+const insideNow = d < g.radius;
 
 if(insideNow && !inside[g.id]){
-inside[g.id]=true;
-await addFeed("Entered "+g.name);
+inside[g.id] = true;
+await addFeed("Entered " + g.name);
 }
 
 if(!insideNow && inside[g.id]){
-inside[g.id]=false;
-await addFeed("Left "+g.name);
+inside[g.id] = false;
+await addFeed("Left " + g.name);
 }
 
 }
@@ -292,55 +270,52 @@ map.setView([lat,lng],15);
 }
 
 /* =========================
-MAP CLICK
+MAP CLICK (SIMPLE + STABLE)
 ========================= */
 
 map.on("click",async e=>{
 
-const type=prompt("place or geofence");
+const type = prompt("place or geofence");
 if(!type) return;
 
-if(type==="place"){
+if(type === "place"){
 
-places.push({
-id:Date.now(),
-name:prompt("name"),
-lat:e.latlng.lat,
-lng:e.latlng.lng
-});
+await supabase.from("places").insert([{
+id: Date.now(),
+name: "Place",
+lat: e.latlng.lat,
+lng: e.latlng.lng
+}]);
 
 await addFeed("Added place");
 
-draw();
-render();
+loadAll();
 return;
 }
 
-geofences.push({
-id:Date.now(),
-name:prompt("name"),
-lat:e.latlng.lat,
-lng:e.latlng.lng,
-radius:parseInt(prompt("radius","200"))
-});
+await supabase.from("geofences").insert([{
+id: Date.now(),
+name: "Geofence",
+lat: e.latlng.lat,
+lng: e.latlng.lng,
+radius: 200
+}]);
 
 await addFeed("Added geofence");
 
-draw();
-render();
+loadAll();
 
 });
 
 /* =========================
-RENDER
+RENDER (STABLE UI)
 ========================= */
 
 function render(){
 
-document.getElementById("sidebar").innerHTML=`
+document.getElementById("sidebar").innerHTML = `
 <div class="card">
 <button id="trackBtn">Start Tracking</button>
-<button id="rtBtn">Enable Realtime</button>
 </div>
 
 <div class="card">
@@ -352,21 +327,19 @@ Geofences: ${geofences.length}
 
 <div class="card">
 <b>Feed</b><br>
-${feed.length?feed.map(f=>`<div>${f.text}</div>`).join(""):"No activity yet"}
+${feed.length ? feed.map(f=>`<div>${f.text}</div>`).join("") : "No activity yet"}
 </div>
 `;
 
-/* attach events */
 document.getElementById("trackBtn").onclick = startTracking;
-document.getElementById("rtBtn").onclick = enableRealtime;
 
 }
 
 /* =========================
-BOOT
+BOOT (IMPORTANT STEP 1 FIX)
 ========================= */
 
-await load();
+await loadAll();
 render();
 draw();
 
