@@ -592,184 +592,94 @@ SIDEBAR
 
 function renderSidebar(){
 
-const sidebar =
-document.getElementById(
-'sidebar'
-);
+const sidebar = document.getElementById('sidebar');
 
-sidebar.innerHTML = `
+if(!sidebar) return;
 
+sidebar.innerHTML = "";
+
+// LIVE STATS
+sidebar.innerHTML += `
 <div class="card">
+<div class="section-title">LIVE STATS</div>
 
-<div class="section-title">
-LIVE STATS
+<div>📍 Places: ${places.length}</div>
+<div>🟠 Active: ${geofences.length}</div>
+<div>📦 Archived: ${archivedGeofences.length}</div>
+<div>🚪 Exits: ${totalExits}</div>
+<div>✅ Entries: ${totalEntries}</div>
 </div>
+`;
 
-<div>
-📍 Places:
-${places.length}
-</div>
-
-<div>
-🟠 Active:
-${geofences.length}
-</div>
-
-<div>
-📦 Archived:
-${archivedGeofences.length}
-</div>
-
-<div>
-✅ Entries:
-${totalEntries}
-</div>
-
-<div>
-🚪 Exits:
-${totalExits}
-</div>
-
-</div>
-
+// ROUTE BUILDER (SAFE VERSION)
+sidebar.innerHTML += `
 <div class="card">
+<div class="section-title">ROUTE BUILDER</div>
 
-<div class="section-title">
-SAVED LOCATIONS
-</div>
+<div>Start: ${routeStart ? routeStart.name : "Not selected"}</div>
+<div>End: ${routeEnd ? routeEnd.name : "Not selected"}</div>
 
 ${
-places.length===0
-?
-'None'
-:
-places.map(place=>`
-<div class="item">
-
-<b>${place.name}</b>
-
-<div class="small">
-${place.address || ''}
-</div>
-
-<div class="action-row">
-
-<button
-class="zoom-btn"
-onclick="
-zoomTo(
-${place.lat},
-${place.lng}
-)
-">
-Zoom
-</button>
-
-<button
-onclick="
-selectRouteLocation(
-${place.id}
-)
-">
-Select
-</button>
-
-</div>
-
-</div>
-`).join('')
+(routeDistance && routeDuration)
+? `
+<br>
+<div>Distance: ${routeDistance} km</div>
+<div>Time: ${routeDuration} mins</div>
+`
+: ""
 }
 
-</div>
+<br><br>
 
+<button onclick="clearRoute()">Clear Route</button>
+
+</div>
+`;
+
+// SAVED LOCATIONS
+sidebar.innerHTML += `
 <div class="card">
-
-<div class="section-title">
-ACTIVE GEOFENCES
-</div>
-
-${
-geofences.length===0
-?
-'None'
-:
-geofences.map(g=>`
+<div class="section-title">SAVED LOCATIONS</div>
+${places.length ? places.map(p => `
 <div class="item">
-
-<b>${g.name}</b>
-
-<div class="small">
-${g.radius}m
-</div>
+<b>${p.name}</b>
+<div class="small">${p.address || ""}</div>
 
 <div class="action-row">
-
-<button
-class="zoom-btn"
-onclick="
-zoomTo(
-${g.lat},
-${g.lng}
-)
-">
-Zoom
-</button>
-
-<button
-class="archive-btn"
-onclick="
-archiveGeofence(
-${g.id}
-)
-">
-Archive
-</button>
-
+<button class="zoom-btn" onclick="zoomTo(${p.lat},${p.lng})">Zoom</button>
+<button onclick="selectRouteLocation(${p.id})">Select</button>
 </div>
-
 </div>
-`).join('')
-}
-
+`).join("") : "None"}
 </div>
+`;
 
+// GEOFENCES
+sidebar.innerHTML += `
 <div class="card">
-
-<div class="section-title">
-ARCHIVED GEOFENCES
-</div>
-
-${
-archivedGeofences.length===0
-?
-'None'
-:
-archivedGeofences.map(g=>`
+<div class="section-title">ACTIVE GEOFENCES</div>
+${geofences.length ? geofences.map(g => `
 <div class="item">
-
 <b>${g.name}</b>
-
-<div class="small">
-Deleted:
-${g.deletedAt}
+<div class="small">${g.radius}m</div>
 </div>
-
-<div class="action-row">
-
-<button
-class="restore-btn"
-onclick="
-restoreGeofence(
-${g.id}
-)
-">
-Restore
-</button>
-
+`).join("") : "None"}
 </div>
+`;
 
+// ARCHIVE
+sidebar.innerHTML += `
+<div class="card">
+<div class="section-title">ARCHIVED</div>
+${archivedGeofences.length ? archivedGeofences.map(g => `
+<div class="item">
+<b>${g.name}</b>
+<div class="small">${g.deletedAt || ""}</div>
 </div>
-`).join('')
+`).join("") : "None"}
+</div>
+`;
+
 }
 /* ==========================
 SIDEBAR
