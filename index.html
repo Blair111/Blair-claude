@@ -54,6 +54,13 @@ html,body{margin:0;height:100%;font-family:var(--body);background:var(--bg);colo
   display:block;font-family:var(--mono);font-size:10.5px;font-weight:500;
   letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:9px;
 }
+.card summary{
+  font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted);cursor:pointer;list-style:none;
+}
+.card summary::-webkit-details-marker{display:none;}
+.card summary::after{content:" ▾";color:var(--brass);}
+.card details[open] summary::after{content:" ▴";}
 
 /* ---- buttons ---- */
 button{
@@ -414,6 +421,45 @@ async function addGeofence(name, lat, lng, radius, url, say) {
   const { error } = await supabase.from("geofences").insert([row]);
   if (error) showStatus("Couldn't add geofence: " + error.message, true); else showStatus("Added geofence: " + name);
 }
+
+/* ========================= LOCATION SEARCH ========================= */
+// Free, keyless geocoding via OpenStreetMap Nominatim.
+let searchResults = [];
+async function searchPlace() {
+  const el = document.getElementById("searchInput");
+  if (!el) return;
+  const q = el.value.trim();
+  if (!q) { showStatus("Type a place to search for.", true); return; }
+  showStatus("Searching for “" + q + "”…");
+  try {
+    const res = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&q=" + encodeURIComponent(q));
+    if (!res.ok) { showStatus("Search failed (" + res.status + ").", true); return; }
+    const data = await res.json();
+    searchResults = (data || []).map(r => ({
+      name: (r.display_name || "").split(",")[0],
+      full: r.display_name || "",
+      lat: parseFloat(r.lat), lng: parseFloat(r.lon)
+    }));
+    if (searchResults.length === 0) showStatus("No matches for “" + q + "”.", true);
+    else showStatus(searchResults.length + " result(s) — tap one to drop a geofence there.");
+    render();
+  } catch (e) {
+    showStatus("Search request failed — check your connection.", true);
+  }
+}
+async function pickSearch(i) {
+  const r = searchResults[i];
+  if (!r) return;
+  map.setView([r.lat, r.lng], 16);
+  const name = prompt("Name for this geofence:", r.name || "Place");
+  if (name === null) { searchResults = []; render(); return; }
+  const rad = parseInt(prompt("Radius in metres:", "200"), 10);
+  const url = normalizeUrl(prompt("Page to open on entry (optional — a web address):", ""));
+  const say = (prompt("Phrase to speak on entry (optional):", "Entered " + (name || "the zone")) || "").trim();
+  await addGeofence(name || "Place", r.lat, r.lng, isNaN(rad) ? 200 : rad, url, say);
+  searchResults = [];
+  await load();
+}
 async function deletePlace(id) {
   if (!confirm("Delete this place?")) return;
   showStatus("Deleting place…");
@@ -519,7 +565,7 @@ async function checkGeofences(lat, lng, acc = 0) {
       beep(880);
       if (g.say) speak(g.say);
       showToast("Entered " + name, "enter");
-      notify("Entered " + name, g.url ? "Tap to open its page" : device, g.url);
+      notify("Entered " + name, device);
       await addEvent("ENTER", g.name);
     } else {
       inside[g.id] = false;
@@ -831,6 +877,18 @@ function render() {
     </div>
 
     <div class="card">
+      <b>Find a place</b>
+      <input id="searchInput" placeholder="Search a location…" onkeydown="if(event.key==='Enter')searchPlace()"/>
+      <button onclick="searchPlace()">Search</button>
+      ${searchResults.length ? searchResults.map((r, i) => `
+        <div class="row">
+          <div class="label" style="cursor:pointer" onclick="pickSearch(${i})">${esc(r.name)}<div class="hint" style="margin-top:1px">${esc(r.full).slice(0, 60)}</div></div>
+          <button class="mini open" onclick="pickSearch(${i})">+ Zone</button>
+        </div>`).join("") : ""}
+      <div class="hint">Type a place, then tap a result to drop a geofence right on it.</div>
+    </div>
+
+    <div class="card">
       <b>Add to map</b>
       <button class="${pendingMode === "place" ? "active" : ""}" onclick="armMode('place')">Add Place</button>
       <button class="alt ${pendingMode === "geofence" ? "active" : ""}" onclick="armMode('geofence')">Add Geofence</button>
@@ -848,10 +906,14 @@ function render() {
     </div>
 
     <div class="card">
-      <b>Road routing (optional)</b>
-      <input id="routeKeyInput" value="${esc(routeKey)}" placeholder="OpenRouteService API key"/>
-      <button onclick="saveRouteKey()">Save key</button>
-      <div class="hint">Get a free key at openrouteservice.org, paste it here, and Run trip follows real driving roads. Without a key it draws a straight line.</div>
+      <details>
+        <summary>Road routing (optional)</summary>
+        <div style="margin-top:10px">
+          <input id="routeKeyInput" type="password" value="${esc(routeKey)}" placeholder="OpenRouteService API key"/>
+          <button onclick="saveRouteKey()">Save key</button>
+          <div class="hint">Get a free key at openrouteservice.org, paste it here, and Run trip follows real driving roads. Without a key it draws a straight line.</div>
+        </div>
+      </details>
     </div>
 
     <div class="card">
@@ -892,6 +954,8 @@ function render() {
   window.runTrip = runTrip;
   window.armTrip = armTrip;
   window.saveRouteKey = saveRouteKey;
+  window.searchPlace = searchPlace;
+  window.pickSearch = pickSearch;
   window.reloadData = refreshData;
   window.clearHistory = clearHistory;
   window.saveDeviceName = saveDeviceName;
