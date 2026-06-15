@@ -77,6 +77,15 @@ button.mini.del{color:var(--danger);}
 button.mini.open{color:var(--brass);border-color:rgba(242,178,92,.4);}
 button.mini.open:hover{border-color:var(--brass);background:rgba(242,178,92,.1);}
 
+/* ---- entry page pop-up ---- */
+.modal-overlay{position:fixed;inset:0;background:rgba(5,8,11,.6);display:flex;align-items:center;justify-content:center;z-index:10000;}
+.modal-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;width:280px;max-width:86vw;text-align:center;box-shadow:0 18px 50px rgba(0,0,0,.6);}
+.modal-title{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);}
+.modal-zone{font-family:var(--display);font-size:21px;font-weight:600;margin:8px 0 18px;color:var(--ink);}
+.modal-actions{display:flex;gap:8px;}
+.modal-open{background:var(--brass);color:#0a0f14;border:none;font-weight:600;flex:1;margin:0;}
+.modal-dismiss{background:transparent;border:1px solid var(--line);color:var(--muted);flex:1;margin:0;}
+
 /* ---- entry action banner ---- */
 .action{display:flex;align-items:center;justify-content:space-between;gap:8px;
   background:rgba(95,208,168,.1);border:1px solid rgba(95,208,168,.35);
@@ -149,6 +158,17 @@ small{color:var(--muted);font-family:var(--mono);font-size:11px;}
 
 <div id="toast"></div>
 
+<div id="pageModal" class="modal-overlay" style="display:none">
+  <div class="modal-card">
+    <div class="modal-title">You've arrived at</div>
+    <div class="modal-zone" id="modalZone"></div>
+    <div class="modal-actions">
+      <button class="modal-open" onclick="openModalPage()">Open page</button>
+      <button class="modal-dismiss" onclick="dismissModal()">Not now</button>
+    </div>
+  </div>
+</div>
+
 <div id="wrap">
   <div id="sidebar">Booting…</div>
   <div id="map"></div>
@@ -197,7 +217,7 @@ const simIcon   = L.divIcon({ className: "marker-sim",   html: "", iconSize: [16
 
 /* ========================= STATE ========================= */
 let places = [], geofences = [], feed = [];
-let inside = {}, enteredAt = {}, openPrompts = {}, lastFlip = {};
+let inside = {}, enteredAt = {}, openPrompts = {}, lastFlip = {}, pageQueue = [];
 const VERSION = "build jun14-b";
 let markers = [], circles = [];
 let pendingMode = null, watchId = null, pollTimer = null, centeredOnce = false, follow = true;
@@ -308,10 +328,27 @@ function speak(text) {
   if (!text || !("speechSynthesis" in window)) return;
   try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(text)); } catch (e) {}
 }
-function autoOpen(url) {
-  if (!url) return;
-  const w = window.open(url, "_blank", "noopener");
-  if (!w) showStatus("Auto-open was blocked — use the Open page button on the banner.", true);
+// Pop-up that offers to open a zone's page when you enter it (you tap to open,
+// so the browser never blocks it).
+function showPageModal() {
+  const el = document.getElementById("pageModal");
+  const zoneEl = document.getElementById("modalZone");
+  if (!el) return;
+  pageQueue = pageQueue.filter(id => { const g = findFence(id); return g && g.url; });
+  if (pageQueue.length === 0) { el.style.display = "none"; return; }
+  const g = findFence(pageQueue[0]);
+  zoneEl.textContent = g.name || "this zone";
+  el.style.display = "flex";
+}
+function openModalPage() {
+  const g = findFence(pageQueue[0]);
+  if (g && g.url) window.open(g.url, "_blank", "noopener");
+  pageQueue.shift();
+  showPageModal();
+}
+function dismissModal() {
+  pageQueue.shift();
+  showPageModal();
 }
 
 /* ========================= LOAD ========================= */
@@ -478,7 +515,7 @@ async function checkGeofences(lat, lng, acc = 0) {
 
     if (insideNow) {
       inside[g.id] = true; enteredAt[g.id] = now; changed = true;
-      if (g.url) { openPrompts[g.id] = true; autoOpen(g.url); }
+      if (g.url) { openPrompts[g.id] = true; pageQueue.push(g.id); showPageModal(); }
       beep(880);
       if (g.say) speak(g.say);
       showToast("Entered " + name, "enter");
@@ -489,6 +526,7 @@ async function checkGeofences(lat, lng, acc = 0) {
       const since = enteredAt[g.id];
       const dur = since ? fmtDur(now - since) : null;
       delete enteredAt[g.id]; delete openPrompts[g.id]; changed = true;
+      pageQueue = pageQueue.filter(x => String(x) !== String(g.id)); showPageModal();
       beep(440);
       showToast("Exited " + name + (dur ? " · " + dur : ""), "exit");
       notify("Exited " + name, dur ? "Stayed " + dur : device);
@@ -532,9 +570,12 @@ function ensureOutside(start, g) {
 }
 
 // Ask OpenRouteService for a driving route through the given points.
-// Returns an array of [lat, lng], or null if it can't (no key / error).
+// Returns an array of [lat, lng], or null if it can't. Reports the real reason.
 async function fetchRoute(points) {
-  if (!routeKey) return null;
+  if (!routeKey) {
+    showStatus("No routing key saved — paste one into the Road routing box. Using a straight line.", true);
+    return null;
+  }
   try {
     const res = await fetch("https://api.openrouteservice.org/v2/directions/driving-car/geojson", {
       method: "POST",
@@ -542,15 +583,19 @@ async function fetchRoute(points) {
       body: JSON.stringify({ coordinates: points.map(p => [p.lng, p.lat]) })
     });
     if (!res.ok) {
-      showStatus("Routing failed (" + res.status + ") — check your key. Using a straight line.", true);
+      // ORS returns a JSON error explaining why (bad key, no road nearby, etc.).
+      let why = "HTTP " + res.status;
+      try { const err = await res.json(); if (err && err.error) why = err.error.message || JSON.stringify(err.error); } catch (e) {}
+      if (res.status === 403) why = "key rejected (403) — check it was pasted correctly";
+      showStatus("Routing failed: " + why + ". Using a straight line.", true);
       return null;
     }
     const data = await res.json();
     const coords = data && data.features && data.features[0] && data.features[0].geometry.coordinates;
-    if (!coords || !coords.length) return null;
+    if (!coords || !coords.length) { showStatus("Route came back empty — using a straight line.", true); return null; }
     return coords.map(c => [c[1], c[0]]);
   } catch (e) {
-    showStatus("Routing request failed — using a straight line.", true);
+    showStatus("Routing request was blocked (network/CORS). Using a straight line.", true);
     return null;
   }
 }
@@ -856,6 +901,8 @@ function render() {
   window.editGeofence = editGeofence;
   window.openGeofencePage = openGeofencePage;
   window.dismissOpen = dismissOpen;
+  window.openModalPage = openModalPage;
+  window.dismissModal = dismissModal;
   window.enableAlerts = enableAlerts;
 }
 
