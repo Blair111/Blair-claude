@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Blair thing</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet"/>
+
+<style>
+:root{
+  --bg:#0a0f14;
+  --panel:#111a21;
+  --panel-2:#0e161c;
+  --line:#1e2c34;
+  --ink:#e8eef0;
+  --muted:#8a9ba3;
+  --brass:#f2b25c;
+  --mint:#5fd0a8;
+  --amber:#f0883e;
+  --teal:#4aa6c4;
+  --danger:#c2554a;
+  --display:'Space Grotesk',system-ui,sans-serif;
+  --body:'Inter',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+
+html,body{margin:0;height:100%;font-family:var(--body);background:var(--bg);color:var(--ink);}
+#wrap{display:flex;height:100vh;}
+
+#sidebar{
+  width:340px;background:var(--panel-2);border-right:1px solid var(--line);
+  padding:14px;overflow:auto;box-sizing:border-box;
+}
+#sidebar::-webkit-scrollbar{width:8px;}
+#sidebar::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px;}
+#map{flex:1;background:#e8e6df;}
+
+/* ---- brand / signature ---- */
+.brand{display:flex;align-items:center;gap:11px;padding:2px 2px 14px;}
+.brand-dot{
+  width:12px;height:12px;border-radius:50%;background:var(--mint);flex:none;
+  box-shadow:0 0 0 0 rgba(95,208,168,.6);animation:ping 2.4s infinite;
+}
+.brand-name{font-family:var(--display);font-weight:700;font-size:21px;letter-spacing:.01em;line-height:1;}
+.brand-sub{font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-top:4px;}
+
+/* ---- cards ---- */
+.card{background:var(--panel);border:1px solid var(--line);padding:13px;margin-bottom:11px;border-radius:11px;}
+.card b{
+  display:block;font-family:var(--mono);font-size:10.5px;font-weight:500;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:9px;
+}
+.card summary{
+  font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted);cursor:pointer;list-style:none;
+}
+.card summary::-webkit-details-marker{display:none;}
+.card summary::after{content:" ▾";color:var(--brass);}
+.card details[open] summary::after{content:" ▴";}
+
+/* ---- buttons ---- */
+button{
+  font-family:var(--body);font-size:13.5px;font-weight:500;
+  padding:8px 12px;margin:5px 5px 0 0;border-radius:8px;cursor:pointer;
+  background:transparent;border:1px solid var(--line);color:var(--ink);
+  transition:background .15s,border-color .15s,color .15s;
+}
+button:hover{border-color:var(--brass);background:rgba(242,178,92,.08);}
+button.active{background:var(--brass);border-color:var(--brass);color:#0a0f14;font-weight:600;}
+button.alt{color:var(--muted);}
+button.warn{color:var(--teal);border-color:rgba(74,166,196,.4);}
+button.warn.active{background:var(--teal);border-color:var(--teal);color:#06222c;}
+button.warn:hover{border-color:var(--teal);background:rgba(74,166,196,.1);}
+button.danger{color:var(--danger);border-color:rgba(194,85,74,.45);}
+button.danger:hover{border-color:var(--danger);background:rgba(194,85,74,.12);}
+button:disabled{opacity:.55;cursor:default;border-color:var(--line);background:transparent;}
+button.mini{padding:3px 8px;margin:0;font-size:12px;color:var(--muted);}
+button.mini:hover{color:var(--ink);}
+button.mini.del{color:var(--danger);}
+button.mini.open{color:var(--brass);border-color:rgba(242,178,92,.4);}
+button.mini.open:hover{border-color:var(--brass);background:rgba(242,178,92,.1);}
+
+/* ---- entry page pop-up ---- */
+.modal-overlay{position:fixed;inset:0;background:rgba(5,8,11,.6);display:flex;align-items:center;justify-content:center;z-index:10000;}
+.modal-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;width:280px;max-width:86vw;text-align:center;box-shadow:0 18px 50px rgba(0,0,0,.6);}
+.modal-title{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);}
+.modal-zone{font-family:var(--display);font-size:21px;font-weight:600;margin:8px 0 18px;color:var(--ink);}
+.modal-actions{display:flex;gap:8px;}
+.modal-open{background:var(--brass);color:#0a0f14;border:none;font-weight:600;flex:1;margin:0;}
+.modal-dismiss{background:transparent;border:1px solid var(--line);color:var(--muted);flex:1;margin:0;}
+
+/* ---- entry action banner ---- */
+.action{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  background:rgba(95,208,168,.1);border:1px solid rgba(95,208,168,.35);
+  border-radius:10px;padding:9px 11px;margin-bottom:10px;}
+.action .a-name{font-size:13.5px;}
+.action .a-hi{color:var(--mint);font-weight:600;}
+.link-note{color:var(--brass);font-family:var(--mono);font-size:11px;margin-top:2px;}
+.say-note{color:var(--teal);font-family:var(--mono);font-size:11px;margin-top:2px;}
+
+input{
+  font-family:var(--body);padding:8px 10px;border-radius:8px;
+  border:1px solid var(--line);background:var(--bg);color:var(--ink);
+  width:58%;box-sizing:border-box;font-size:14px;
+}
+input:focus{outline:none;border-color:var(--brass);}
+
+/* ---- status ---- */
+#status{padding:9px 11px;border-radius:8px;margin-bottom:11px;font-size:13px;line-height:1.45;display:none;}
+#status.ok{display:block;background:rgba(95,208,168,.1);border:1px solid rgba(95,208,168,.3);color:#bdeedd;}
+#status.err{display:block;background:rgba(194,85,74,.13);border:1px solid rgba(194,85,74,.38);color:#f2c0ba;}
+
+small{color:var(--muted);font-family:var(--mono);font-size:11px;}
+.hint{color:var(--muted);font-size:12px;margin-top:7px;line-height:1.45;}
+.inside-note{color:var(--mint);font-family:var(--mono);font-size:11px;margin-top:2px;}
+
+/* ---- feed ---- */
+.feed-item{margin-bottom:7px;border-left:3px solid var(--line);padding:5px 9px;background:var(--panel-2);border-radius:6px;}
+.feed-item.enter{border-left-color:var(--mint);}
+.feed-item.exit{border-left-color:var(--amber);}
+.tag{font-family:var(--mono);font-weight:500;font-size:12px;letter-spacing:.05em;}
+.tag.enter{color:var(--mint);}
+.tag.exit{color:var(--amber);}
+
+/* ---- list rows ---- */
+.row{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 0;border-bottom:1px solid var(--line);}
+.row:last-child{border-bottom:none;}
+.row .label{flex:1;overflow:hidden;font-size:13.5px;}
+
+/* ---- toast ---- */
+#toast{
+  position:fixed;top:18px;left:50%;transform:translateX(-50%) translateY(-20px);
+  padding:12px 22px;border-radius:10px;font-family:var(--display);font-size:15px;font-weight:600;
+  opacity:0;pointer-events:none;transition:opacity .3s,transform .3s;z-index:9999;
+  box-shadow:0 8px 28px rgba(0,0,0,.5);
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+#toast.enter{background:var(--mint);color:#06241a;}
+#toast.exit{background:var(--amber);color:#2a1404;}
+
+/* ---- leaflet dark overrides ---- */
+.leaflet-div-icon{background:transparent;border:none;}
+.marker-place{background:var(--brass);border:2px solid var(--bg);border-radius:50%;box-shadow:0 0 0 2px rgba(242,178,92,.35);}
+.marker-user{background:var(--mint);border-radius:50%;box-shadow:0 0 0 0 rgba(95,208,168,.55);animation:ping 2s infinite;}
+.marker-sim{background:var(--brass);border-radius:50%;box-shadow:0 0 0 0 rgba(242,178,92,.55);animation:pingB 2s infinite;}
+.leaflet-popup-content-wrapper{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:9px;font-family:var(--body);box-shadow:0 8px 24px rgba(0,0,0,.5);}
+.leaflet-popup-tip{background:var(--panel);border:1px solid var(--line);}
+.leaflet-popup-close-button{color:var(--muted)!important;}
+.leaflet-bar a{background:var(--panel);color:var(--ink);border-bottom:1px solid var(--line);}
+.leaflet-bar a:hover{background:#1a2630;}
+.leaflet-control-attribution{background:rgba(255,255,255,.8)!important;color:#555!important;}
+.leaflet-control-attribution a{color:#2a7fa0!important;}
+
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(95,208,168,.5)}70%{box-shadow:0 0 0 13px rgba(95,208,168,0)}100%{box-shadow:0 0 0 0 rgba(95,208,168,0)}}
+@keyframes pingB{0%{box-shadow:0 0 0 0 rgba(242,178,92,.5)}70%{box-shadow:0 0 0 13px rgba(242,178,92,0)}100%{box-shadow:0 0 0 0 rgba(242,178,92,0)}}
+@media (prefers-reduced-motion: reduce){.brand-dot,.marker-user,.marker-sim{animation:none;}}
+</style>
+</head>
+
+<body>
+
+<div id="toast"></div>
+
+<div id="pageModal" class="modal-overlay" style="display:none">
+  <div class="modal-card">
+    <div class="modal-title">You've arrived at</div>
+    <div class="modal-zone" id="modalZone"></div>
+    <div class="modal-actions">
+      <button class="modal-open" onclick="openModalPage()">Open page</button>
+      <button class="modal-dismiss" onclick="dismissModal()">Not now</button>
+    </div>
+  </div>
+</div>
+
+<div id="wrap">
+  <div id="sidebar">Booting…</div>
+  <div id="map"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script type="module">
+
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+/* ========================= SUPABASE ========================= */
+const supabase = createClient(
+  "https://ihvutyeambhbynjsjnbw.supabase.co",
+  "sb_publishable_2V_TIKwFpZWLvS1V_vUl_g_HW3WL6pJ"
+);
+
+/* ========================= DEVICE NAME + ROUTING KEY ========================= */
+function loadName() { try { return localStorage.getItem("deviceName"); } catch (e) { return null; } }
+function storeName(n) { try { localStorage.setItem("deviceName", n); } catch (e) {} }
+let device = loadName();
+if (!device) { device = "Device-" + Math.floor(Math.random() * 1000); storeName(device); }
+
+let routeKey = "";
+try { routeKey = localStorage.getItem("routeKey") || ""; } catch (e) {}
+function saveRouteKey() {
+  const el = document.getElementById("routeKeyInput");
+  if (!el) return;
+  routeKey = el.value.trim();
+  try { localStorage.setItem("routeKey", routeKey); } catch (e) {}
+  showStatus(routeKey ? "Routing key saved — trips will follow roads." : "Routing key cleared — trips use a straight line.");
+  render();
+}
+
+/* ========================= MAP ========================= */
+const map = L.map("map", { zoomControl: true }).setView([55.9533, -3.1883], 13);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png", {
+  subdomains: "abcd", maxZoom: 20,
+  attribution: '© OpenStreetMap © CARTO'
+}).addTo(map);
+
+/* ---- custom icons ---- */
+const placeIcon = L.divIcon({ className: "marker-place", html: "", iconSize: [15, 15], iconAnchor: [7, 7] });
+const userIcon  = L.divIcon({ className: "marker-user",  html: "", iconSize: [16, 16], iconAnchor: [8, 8] });
+const simIcon   = L.divIcon({ className: "marker-sim",   html: "", iconSize: [16, 16], iconAnchor: [8, 8] });
+
+/* ========================= STATE ========================= */
+let places = [], geofences = [], feed = [];
+let inside = {}, enteredAt = {}, openPrompts = {}, lastFlip = {}, pageQueue = [];
+const VERSION = "build jun14-b";
+let markers = [], circles = [];
+let pendingMode = null, watchId = null, pollTimer = null, centeredOnce = false, follow = true;
+let simRunning = false, tripLine = null;
+let userMarker = null, accuracyCircle = null, simMarker = null, lastStatus = null;
+
+/* ========================= HELPERS ========================= */
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g,
+    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+function showStatus(msg, isError = false) {
+  lastStatus = { msg, err: isError };
+  const el = document.getElementById("status");
+  if (el) { el.textContent = msg; el.className = isError ? "err" : "ok"; }
+}
+let toastTimer = null;
+function showToast(msg, kind) {
+  const t = document.getElementById("toast");
+  t.textContent = (kind === "enter" ? "✓ " : "✕ ") + msg;
+  t.className = "show " + kind;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = ""; }, 3500);
+}
+function fmtTime(iso) { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString(); }
+function fmtDur(ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return s + "s";
+  const m = Math.floor(s / 60), rs = s % 60;
+  if (m < 60) return m + "m " + rs + "s";
+  const h = Math.floor(m / 60), rm = m % 60;
+  return h + "h " + rm + "m";
+}
+
+/* ========================= NOTIFICATIONS ========================= */
+function canNotify() { return "Notification" in window; }
+async function enableAlerts() {
+  if (!canNotify()) { showStatus("This browser doesn't support notifications.", true); return; }
+  if (Notification.permission === "denied") {
+    showStatus("Notifications are blocked for this site. Turn them on via the padlock or ⋮ menu next to the address bar, then try again.", true);
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  if (perm === "granted") {
+    showStatus("Notifications enabled — sending a test ping now.");
+    notify("Notifications on", "You'll get a ping each time you cross a zone.");
+  } else {
+    showStatus("Notifications weren't allowed. You can enable them in this site's settings.", true);
+  }
+  render();
+}
+async function notify(title, body, url) {
+  if (!canNotify() || Notification.permission !== "granted") return;
+  // On phones, new Notification() throws — a service worker is required. Try it
+  // first if one is registered, then fall back to the simple desktop method.
+  try {
+    const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+    if (reg && reg.showNotification) {
+      await reg.showNotification(title, { body, data: { url } });
+      return;
+    }
+  } catch (e) {}
+  try {
+    const n = new Notification(title, { body });
+    if (url) n.onclick = () => { window.open(url, "_blank", "noopener"); };
+  } catch (e) {
+    showStatus("Your phone blocked the pop-up notification — the in-app banner and toast still work.", true);
+  }
+}
+function normalizeUrl(u) {
+  u = (u || "").trim();
+  if (!u) return "";
+  if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+  return u;
+}
+function findFence(id) { return geofences.find(g => String(g.id) === String(id)); }
+function findPlace(id) { return places.find(p => String(p.id) === String(id)); }
+function openGeofencePage(id) { const g = findFence(id); if (g && g.url) window.open(g.url, "_blank", "noopener"); }
+function dismissOpen(id) { delete openPrompts[id]; render(); }
+
+/* ========================= ZONE ACTIONS ========================= */
+let speechPrimed = false;
+let audioCtx = null;
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  } catch (e) {}
+}
+function beep(freq) {
+  try {
+    if (!audioCtx) return;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = "sine"; o.frequency.value = freq;
+    o.connect(g); g.connect(audioCtx.destination);
+    const t = audioCtx.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+    o.start(t); o.stop(t + 0.3);
+  } catch (e) {}
+}
+function primeSpeech() {
+  if (speechPrimed || !("speechSynthesis" in window)) return;
+  try { speechSynthesis.speak(new SpeechSynthesisUtterance(" ")); speechPrimed = true; } catch (e) {}
+}
+function speak(text) {
+  if (!text || !("speechSynthesis" in window)) return;
+  try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(text)); } catch (e) {}
+}
+// Pop-up that offers to open a zone's page when you enter it (you tap to open,
+// so the browser never blocks it).
+function showPageModal() {
+  const el = document.getElementById("pageModal");
+  const zoneEl = document.getElementById("modalZone");
+  if (!el) return;
+  pageQueue = pageQueue.filter(id => { const g = findFence(id); return g && g.url; });
+  if (pageQueue.length === 0) { el.style.display = "none"; return; }
+  const g = findFence(pageQueue[0]);
+  zoneEl.textContent = g.name || "this zone";
+  el.style.display = "flex";
+}
+function openModalPage() {
+  const g = findFence(pageQueue[0]);
+  if (g && g.url) window.open(g.url, "_blank", "noopener");
+  pageQueue.shift();
+  showPageModal();
+}
+function dismissModal() {
+  pageQueue.shift();
+  showPageModal();
+}
+
+/* ========================= LOAD ========================= */
+async function load() {
+  const p = await supabase.from("places").select("*");
+  const g = await supabase.from("geofences").select("*");
+  const f = await supabase.from("feed").select("*").order("id", { ascending: false }).limit(50);
+  if (p.error) { showStatus("Couldn't load places: " + p.error.message, true); return false; }
+  if (g.error) { showStatus("Couldn't load geofences: " + g.error.message, true); return false; }
+  if (f.error) { showStatus("Couldn't load history: " + f.error.message, true); return false; }
+  places = p.data || []; geofences = g.data || []; feed = f.data || [];
+  render(); draw();
+  return true;
+}
+async function refreshData() {
+  showStatus("Refreshing…");
+  const sb = document.getElementById("sidebar");
+  if (sb) sb.scrollTop = 0;   // bring the status message into view
+  try {
+    const ok = await load();
+    if (ok) showStatus("Refreshed at " + new Date().toLocaleTimeString() + ".");
+  } catch (e) {
+    showStatus("Refresh failed — couldn't reach the database. Check your connection.", true);
+  }
+}
+async function clearHistory() {
+  if (!confirm("Clear the entire entries & exits history? This can't be undone.")) return;
+  showStatus("Clearing history…");
+  const { data, error } = await supabase.from("feed").delete().neq("id", 0).select();
+  if (error) { showStatus("Couldn't clear: " + error.message, true); return; }
+  if (!data || data.length === 0) {
+    showStatus("Clearing was blocked — the feed table needs a DELETE policy in Supabase (run the SQL).", true);
+    return;
+  }
+  feed = []; render();
+  showStatus("History cleared.");
+}
+
+/* ========================= REALTIME ========================= */
+let reloadTimer = null;
+function subscribeRealtime() {
+  supabase.channel("live-map")
+    .on("postgres_changes", { event: "*", schema: "public" }, () => {
+      clearTimeout(reloadTimer); reloadTimer = setTimeout(load, 300);
+    }).subscribe();
+}
+
+/* ========================= WRITES ========================= */
+async function addEvent(type, text) {
+  feed.unshift({ type, text, device, created_at: new Date().toISOString() });
+  render();
+  const { error } = await supabase.from("feed").insert([{ type, text, device }]);
+  if (error) showStatus("Couldn't save event: " + error.message, true);
+}
+async function addPlace(name, lat, lng) {
+  const { error } = await supabase.from("places").insert([{ name, lat, lng }]);
+  if (error) showStatus("Couldn't add place: " + error.message, true); else showStatus("Added place: " + name);
+}
+async function addGeofence(name, lat, lng, radius, url, say) {
+  const row = { name, lat, lng, radius };
+  if (url) row.url = url;   // only sent when set, so it still works before the column is added
+  if (say) row.say = say;
+  const { error } = await supabase.from("geofences").insert([row]);
+  if (error) showStatus("Couldn't add geofence: " + error.message, true); else showStatus("Added geofence: " + name);
+}
+
+/* ========================= LOCATION SEARCH ========================= */
+// Free, keyless geocoding via OpenStreetMap Nominatim.
+let searchResults = [];
+async function searchPlace() {
+  const el = document.getElementById("searchInput");
+  if (!el) return;
+  const q = el.value.trim();
+  if (!q) { showStatus("Type a place to search for.", true); return; }
+  showStatus("Searching for “" + q + "”…");
+  try {
+    const res = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&q=" + encodeURIComponent(q));
+    if (!res.ok) { showStatus("Search failed (" + res.status + ").", true); return; }
+    const data = await res.json();
+    searchResults = (data || []).map(r => ({
+      name: (r.display_name || "").split(",")[0],
+      full: r.display_name || "",
+      lat: parseFloat(r.lat), lng: parseFloat(r.lon)
+    }));
+    if (searchResults.length === 0) showStatus("No matches for “" + q + "”.", true);
+    else showStatus(searchResults.length + " result(s) — tap one to drop a geofence there.");
+    render();
+  } catch (e) {
+    showStatus("Search request failed — check your connection.", true);
+  }
+}
+async function pickSearch(i) {
+  const r = searchResults[i];
+  if (!r) return;
+  map.setView([r.lat, r.lng], 16);
+  const name = prompt("Name for this geofence:", r.name || "Place");
+  if (name === null) { searchResults = []; render(); return; }
+  const rad = parseInt(prompt("Radius in metres:", "200"), 10);
+  const url = normalizeUrl(prompt("Page to open on entry (optional — a web address):", ""));
+  const say = (prompt("Phrase to speak on entry (optional):", "Entered " + (name || "the zone")) || "").trim();
+  await addGeofence(name || "Place", r.lat, r.lng, isNaN(rad) ? 200 : rad, url, say);
+  searchResults = [];
+  await load();
+}
+async function deletePlace(id) {
+  if (!confirm("Delete this place?")) return;
+  showStatus("Deleting place…");
+  const { data, error } = await supabase.from("places").delete().eq("id", id).select();
+  if (error) { showStatus("Couldn't delete: " + error.message, true); return; }
+  if (!data || data.length === 0) {
+    showStatus("Delete was blocked — the places table needs a DELETE policy in Supabase (run the delete-policy SQL).", true);
+    return;
+  }
+  places = places.filter(p => String(p.id) !== String(id));
+  render(); draw();
+  showStatus("Place deleted.");
+  load();
+}
+async function renamePlace(id) {
+  const p = findPlace(id);
+  const name = prompt("New name for this place:", p ? p.name : "");
+  if (name === null) return;
+  const { error } = await supabase.from("places").update({ name }).eq("id", id);
+  if (error) showStatus("Couldn't rename: " + error.message, true); else showStatus("Place renamed.");
+  await load();
+}
+async function deleteGeofence(id) {
+  if (!confirm("Delete this geofence?")) return;
+  showStatus("Deleting geofence…");
+  const { data, error } = await supabase.from("geofences").delete().eq("id", id).select();
+  if (error) { showStatus("Couldn't delete: " + error.message, true); return; }
+  if (!data || data.length === 0) {
+    showStatus("Delete was blocked — the geofences table needs a DELETE policy in Supabase (run the delete-policy SQL).", true);
+    return;
+  }
+  geofences = geofences.filter(g => String(g.id) !== String(id));
+  delete inside[id]; delete enteredAt[id]; delete openPrompts[id];
+  render(); draw();
+  showStatus("Geofence deleted.");
+  load();
+}
+async function editGeofence(id) {
+  const g = findFence(id);
+  if (!g) return;
+  const name = prompt("New name (leave blank to keep):", g.name || "");
+  if (name === null) return;
+  const rStr = prompt("New radius in metres (leave blank to keep):", g.radius || "");
+  if (rStr === null) return;
+  const uStr = prompt("Page to open on entry (web address, blank to clear):", g.url || "");
+  if (uStr === null) return;
+  const sStr = prompt("Phrase to speak on entry (blank to clear):", g.say || "");
+  if (sStr === null) return;
+  const patch = {};
+  if (name.trim() !== "") patch.name = name.trim();
+  const r = parseInt(rStr, 10);
+  if (!isNaN(r)) patch.radius = r;
+  patch.url = normalizeUrl(uStr);   // sets or clears the link
+  patch.say = sStr.trim();          // sets or clears the spoken phrase
+  const { error } = await supabase.from("geofences").update(patch).eq("id", id);
+  if (error) showStatus("Couldn't update: " + error.message, true); else showStatus("Geofence updated.");
+  await load();
+}
+
+/* ========================= DEVICE NAME ========================= */
+function saveDeviceName() {
+  const el = document.getElementById("nameInput");
+  if (!el) return;
+  const v = el.value.trim();
+  if (!v) { showStatus("Enter a name first.", true); return; }
+  device = v; storeName(device); showStatus("Name saved: " + device); render();
+}
+
+/* ========================= DISTANCE ========================= */
+function distance(a, b, c, d) {
+  const R = 6371000;
+  const dLat = (c - a) * Math.PI / 180, dLng = (d - b) * Math.PI / 180;
+  const x = Math.sin(dLat / 2) ** 2 +
+    Math.cos(a * Math.PI / 180) * Math.cos(c * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+/* ========================= GEOFENCE CHECK ========================= */
+async function checkGeofences(lat, lng, acc = 0) {
+  if (geofences.length === 0) { showStatus("Add a geofence first, then enter or exit it.", true); return; }
+  let changed = false;
+  const now = Date.now();
+  for (const g of geofences) {
+    // Ignore hopeless GPS fixes that can't reliably place you near this zone.
+    if (acc && acc > Math.max(g.radius * 2, 200)) continue;
+
+    const d = distance(lat, lng, g.lat, g.lng);
+    const name = g.name || "geofence";
+    // Hysteresis: enter only when clearly inside, exit only when clearly out.
+    const wasIn = inside[g.id] === true;
+    const margin = Math.max(g.radius * 0.15, acc * 0.8, 25);
+    const insideNow = wasIn ? (d < g.radius + margin) : (d < g.radius);
+    if (insideNow === wasIn) continue;
+
+    // Real-GPS flips are rate-limited to one per zone every 8s to kill flapping.
+    // Simulations and trips (acc === 0) are exempt so they stay snappy.
+    if (acc && lastFlip[g.id] && (now - lastFlip[g.id]) < 8000) continue;
+    lastFlip[g.id] = now;
+
+    if (insideNow) {
+      inside[g.id] = true; enteredAt[g.id] = now; changed = true;
+      if (g.url) { openPrompts[g.id] = true; pageQueue.push(g.id); showPageModal(); }
+      beep(880);
+      if (g.say) speak(g.say);
+      showToast("Entered " + name, "enter");
+      notify("Entered " + name, device);
+      await addEvent("ENTER", g.name);
+    } else {
+      inside[g.id] = false;
+      const since = enteredAt[g.id];
+      const dur = since ? fmtDur(now - since) : null;
+      delete enteredAt[g.id]; delete openPrompts[g.id]; changed = true;
+      pageQueue = pageQueue.filter(x => String(x) !== String(g.id)); showPageModal();
+      beep(440);
+      showToast("Exited " + name + (dur ? " · " + dur : ""), "exit");
+      notify("Exited " + name, dur ? "Stayed " + dur : device);
+      await addEvent("EXIT", g.name + (dur ? " (stayed " + dur + ")" : ""));
+    }
+  }
+  if (changed) draw();
+}
+
+/* ========================= ANIMATED TRIP ========================= */
+// Starts at your real location, travels into the nearest geofence (along real
+// roads when a routing key is set), then back out — firing a genuine ENTER
+// then EXIT as it crosses the boundary.
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function mapCenter() { const c = map.getCenter(); return { lat: c.lat, lng: c.lng }; }
+
+// Robust location read: try precise, then coarse, then fall back to map centre.
+function getStart() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) { resolve(mapCenter()); return; }
+    const ok = pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    const coarse = () => navigator.geolocation.getCurrentPosition(ok,
+      () => { showStatus("Couldn't read your location — starting from the map centre.", true); resolve(mapCenter()); },
+      { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 });
+    navigator.geolocation.getCurrentPosition(ok, coarse,
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 12000 });
+  });
+}
+
+function ensureOutside(start, g) {
+  if (distance(start.lat, start.lng, g.lat, g.lng) > g.radius) return start;
+  let dLat = start.lat - g.lat, dLng = start.lng - g.lng;
+  if (dLat === 0 && dLng === 0) dLat = 0.001;
+  const mag = Math.sqrt(dLat * dLat + dLng * dLng);
+  const out = g.radius * 1.6;
+  const mPerLat = 111320, mPerLng = 111320 * Math.cos(g.lat * Math.PI / 180);
+  return {
+    lat: g.lat + (dLat / mag) * (out / mPerLat),
+    lng: g.lng + (dLng / mag) * (out / mPerLng)
+  };
+}
+
+// Ask OpenRouteService for a driving route through the given points.
+// Returns an array of [lat, lng], or null if it can't. Reports the real reason.
+async function fetchRoute(points) {
+  if (!routeKey) {
+    showStatus("No routing key saved — paste one into the Road routing box. Using a straight line.", true);
+    return null;
+  }
+  try {
+    const res = await fetch("https://api.openrouteservice.org/v2/directions/driving-car/geojson", {
+      method: "POST",
+      headers: { "Authorization": routeKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ coordinates: points.map(p => [p.lng, p.lat]) })
+    });
+    if (!res.ok) {
+      // ORS returns a JSON error explaining why (bad key, no road nearby, etc.).
+      let why = "HTTP " + res.status;
+      try { const err = await res.json(); if (err && err.error) why = err.error.message || JSON.stringify(err.error); } catch (e) {}
+      if (res.status === 403) why = "key rejected (403) — check it was pasted correctly";
+      showStatus("Routing failed: " + why + ". Using a straight line.", true);
+      return null;
+    }
+    const data = await res.json();
+    const coords = data && data.features && data.features[0] && data.features[0].geometry.coordinates;
+    if (!coords || !coords.length) { showStatus("Route came back empty — using a straight line.", true); return null; }
+    return coords.map(c => [c[1], c[0]]);
+  } catch (e) {
+    showStatus("Routing request was blocked (network/CORS). Using a straight line.", true);
+    return null;
+  }
+}
+
+// Build a straight-line path of [lat,lng] points between two coords.
+function straightPath(a, b, steps) {
+  const out = [];
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    out.push([a.lat + (b.lat - a.lat) * t, a.lng + (b.lng - a.lng) * t]);
+  }
+  return out;
+}
+
+// Animate the marker through a list of [lat,lng] points, checking geofences.
+async function animatePath(path) {
+  const delay = Math.max(25, Math.min(140, Math.round(8000 / path.length)));
+  for (const pt of path) {
+    simMarker.setLatLng(pt);
+    await checkGeofences(pt[0], pt[1]);
+    await sleep(delay);
+  }
+}
+
+async function runTrip(targetId) {
+  if (simRunning) return;
+  if (geofences.length === 0) { showStatus("Add a geofence first, then run the trip.", true); return; }
+  primeSpeech();
+
+  showStatus("Reading your location for the trip…");
+  const raw = await getStart();
+
+  // Use the picked zone if given, otherwise the one nearest to you.
+  let target = targetId ? findFence(targetId) : null;
+  if (!target) {
+    target = geofences[0]; let best = Infinity;
+    for (const g of geofences) {
+      const d = distance(raw.lat, raw.lng, g.lat, g.lng);
+      if (d < best) { best = d; target = g; }
+    }
+  }
+  const start = ensureOutside(raw, target);
+  const centre = { lat: target.lat, lng: target.lng };
+
+  simRunning = true; render();
+  if (!simMarker) simMarker = L.marker([start.lat, start.lng], { icon: simIcon }).addTo(map).bindPopup("Trip");
+  simMarker.setLatLng([start.lat, start.lng]);
+
+  showStatus(routeKey ? "Finding a road route…" : "Plotting the trip…");
+  let path = await fetchRoute([start, centre, start]);
+  const onRoads = !!path;
+  if (!path) path = straightPath(start, centre, 45).concat(straightPath(centre, start, 45));
+
+  if (tripLine) map.removeLayer(tripLine);
+  tripLine = L.polyline(path, { color: "#f2b25c", weight: 3, opacity: .8 }).addTo(map);
+  map.fitBounds(tripLine.getBounds().pad(0.3));
+
+  showStatus("Trip running" + (onRoads ? " along roads" : "") + " — into " + (target.name || "the zone") + "…");
+  await animatePath(path);
+
+  if (tripLine) { map.removeLayer(tripLine); tripLine = null; }
+  simRunning = false; render();
+  showStatus("Trip finished — one full enter and exit" + (onRoads ? " along roads." : ". Add a routing key for real roads."));
+}
+
+/* ========================= DRAW ========================= */
+function draw() {
+  markers.forEach(m => map.removeLayer(m));
+  circles.forEach(c => map.removeLayer(c));
+  markers = []; circles = [];
+
+  for (const p of places) {
+    const m = L.marker([p.lat, p.lng], { icon: placeIcon }).addTo(map);
+    m.on("click", e => {
+      L.popup().setLatLng(e.latlng).setContent(esc(p.name) || "Place").openOn(map);
+    });
+    markers.push(m);
+  }
+  for (const g of geofences) {
+    const isIn = inside[g.id] === true;
+    const colour = isIn ? "#5fd0a8" : "#4aa6c4";
+    const c = L.circle([g.lat, g.lng], {
+      radius: g.radius, color: colour, fillColor: colour, fillOpacity: 0.18, weight: 1.5
+    }).addTo(map);
+    c.on("click", async e => {
+      if (pendingMode === "trip") { pendingMode = null; render(); await runTrip(g.id); return; }
+      L.popup().setLatLng(e.latlng)
+        .setContent((esc(g.name) || "Geofence") + (isIn ? " — inside" : "")).openOn(map);
+    });
+    circles.push(c);
+  }
+}
+
+/* ========================= TRACKING ========================= */
+async function handlePosition(pos) {
+  const lat = pos.coords.latitude, lng = pos.coords.longitude, acc = pos.coords.accuracy;
+  if (!userMarker) userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(map);
+  userMarker.setLatLng([lat, lng]);
+  if (accuracyCircle) map.removeLayer(accuracyCircle);
+  accuracyCircle = L.circle([lat, lng], {
+    radius: acc, color: "#4aa6c4", fillColor: "#4aa6c4", fillOpacity: 0.08, weight: 1, interactive: false
+  }).addTo(map);
+  await checkGeofences(lat, lng, acc);
+  if (!centeredOnce) { map.setView([lat, lng], 15); centeredOnce = true; }
+  else if (follow) { map.panTo([lat, lng]); }   // map travels with you
+  showStatus("Tracking — accuracy ±" + Math.round(acc) + "m");
+}
+function trackingError(err) {
+  if (err.code === 1) {
+    showStatus("Location permission was denied. Allow location for this site (padlock menu by the address bar), then start again.", true);
+  } else if (err.code === 3) {
+    showStatus("Couldn't get a location fix in time. Laptops struggle indoors — try near a window, or use a phone for real tracking.", true);
+  } else {
+    showStatus("Location is unavailable right now. Check that location and Wi‑Fi are on, then retry.", true);
+  }
+}
+function startTracking() {
+  if (!navigator.geolocation) { showStatus("This browser has no location support.", true); return; }
+  if (watchId !== null) return;
+  primeSpeech();
+  // Allow a recent cached fix and a generous timeout so it stops timing out.
+  const opts = { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 };
+  watchId = navigator.geolocation.watchPosition(handlePosition, trackingError, opts);
+  // Laptops sit on a stale fix while moving, so force a fresh lookup every few
+  // seconds (the automatic version of the page refresh that worked for you).
+  pollTimer = setInterval(() => {
+    navigator.geolocation.getCurrentPosition(handlePosition, trackingError, opts);
+  }, 5000);
+  render();
+}
+function stopTracking() {
+  if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  if (pollTimer !== null) { clearInterval(pollTimer); pollTimer = null; }
+  showStatus("Tracking stopped."); render();
+}
+function toggleFollow() {
+  follow = !follow;
+  showStatus(follow ? "Map will follow your position." : "Follow off — map stays where you leave it.");
+  render();
+}
+
+/* ========================= MAP CLICK ========================= */
+map.on("click", async e => {
+  const lat = e.latlng.lat, lng = e.latlng.lng;
+  if (pendingMode === "place") {
+    const name = prompt("Name for this place:", "Place");
+    if (name !== null) await addPlace(name || "Place", lat, lng);
+    pendingMode = null; await load();
+  } else if (pendingMode === "geofence") {
+    const name = prompt("Name for this geofence:", "Geofence");
+    if (name !== null) {
+      const r = parseInt(prompt("Radius in metres:", "200"), 10);
+      const url = normalizeUrl(prompt("Page to open on entry (optional — a web address):", ""));
+      const say = (prompt("Phrase to speak on entry (optional):", "Entered " + (name || "the zone")) || "").trim();
+      await addGeofence(name || "Geofence", lat, lng, isNaN(r) ? 200 : r, url, say);
+    }
+    pendingMode = null; await load();
+  }
+});
+function armMode(mode) {
+  pendingMode = (pendingMode === mode) ? null : mode;
+  if (pendingMode) showStatus("Click the map to drop a " + pendingMode + ".");
+  else showStatus("Ready.");
+  render();
+}
+function armTrip() {
+  if (simRunning) return;
+  if (geofences.length === 0) { showStatus("Add a geofence first, then run the trip.", true); return; }
+  if (geofences.length === 1) { runTrip(geofences[0].id); return; }  // only one zone — just go
+  pendingMode = "trip";
+  showStatus("Tap the geofence circle you want the trip to travel to.");
+  render();
+}
+
+/* ========================= RENDER ========================= */
+function render() {
+  const tracking = watchId !== null;
+  const crossings = feed.filter(f => f.type === "ENTER" || f.type === "EXIT");
+  const alertsOn = canNotify() && Notification.permission === "granted";
+
+  const placeRows = places.length
+    ? places.map(p => `
+        <div class="row">
+          <span class="label">${esc(p.name) || "Place"}</span>
+          <button class="mini" onclick="renamePlace('${p.id}')">Rename</button>
+          <button class="mini del" onclick="deletePlace('${p.id}')">✕</button>
+        </div>`).join("")
+    : `<div class="hint">None yet — use Add Place.</div>`;
+
+  const fenceRows = geofences.length
+    ? geofences.map(g => {
+        const isIn = inside[g.id] === true;
+        const sinceTxt = isIn && enteredAt[g.id]
+          ? `<div class="inside-note">inside since ${fmtTime(new Date(enteredAt[g.id]).toISOString())}</div>` : "";
+        const linkTxt = g.url ? `<div class="link-note">↗ opens a page</div>` : "";
+        const sayTxt = g.say ? `<div class="say-note">🔊 “${esc(g.say)}”</div>` : "";
+        const openBtn = g.url ? `<button class="mini open" onclick="openGeofencePage('${g.id}')">Open</button>` : "";
+        return `
+          <div class="row">
+            <div class="label">${esc(g.name) || "Geofence"} · ${g.radius}m${sinceTxt}${linkTxt}${sayTxt}</div>
+            ${openBtn}
+            <button class="mini" onclick="editGeofence('${g.id}')">Edit</button>
+            <button class="mini del" onclick="deleteGeofence('${g.id}')">✕</button>
+          </div>`;
+      }).join("")
+    : `<div class="hint">None yet — use Add Geofence.</div>`;
+
+  // Banners for zones you're currently inside that have a page to open.
+  const openBanners = Object.keys(openPrompts).map(id => {
+    const g = findFence(id);
+    if (!g) return "";
+    return `
+      <div class="action">
+        <div class="a-name">Entered <span class="a-hi">${esc(g.name) || "geofence"}</span></div>
+        <div style="flex:none">
+          <button class="mini open" onclick="openGeofencePage('${id}')">Open page</button>
+          <button class="mini" onclick="dismissOpen('${id}')">✕</button>
+        </div>
+      </div>`;
+  }).join("");
+
+  document.getElementById("sidebar").innerHTML = `
+    <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-align:right;margin-bottom:6px;">${VERSION}</div>
+    <div id="status"></div>
+
+    ${openBanners}
+
+    <div class="card">
+      <b>Your name</b>
+      <input id="nameInput" value="${esc(device)}"/>
+      <button onclick="saveDeviceName()">Save</button>
+      <div class="hint">Shown on every entry and exit you log. Remembered on this device.</div>
+    </div>
+
+    <div class="card">
+      <b>Find a place</b>
+      <input id="searchInput" placeholder="Search a location…" onkeydown="if(event.key==='Enter')searchPlace()"/>
+      <button onclick="searchPlace()">Search</button>
+      ${searchResults.length ? searchResults.map((r, i) => `
+        <div class="row">
+          <div class="label" style="cursor:pointer" onclick="pickSearch(${i})">${esc(r.name)}<div class="hint" style="margin-top:1px">${esc(r.full).slice(0, 60)}</div></div>
+          <button class="mini open" onclick="pickSearch(${i})">+ Zone</button>
+        </div>`).join("") : ""}
+      <div class="hint">Type a place, then tap a result to drop a geofence right on it.</div>
+    </div>
+
+    <div class="card">
+      <b>Add to map</b>
+      <button class="${pendingMode === "place" ? "active" : ""}" onclick="armMode('place')">Add Place</button>
+      <button class="alt ${pendingMode === "geofence" ? "active" : ""}" onclick="armMode('geofence')">Add Geofence</button>
+    </div>
+
+    <div class="card">
+      <b>Tracking</b>
+      ${tracking
+        ? `<button class="danger" onclick="stopTracking()">Stop Tracking</button>`
+        : `<button onclick="startTracking()">Start Tracking</button>`}
+      <button class="warn ${pendingMode === "trip" ? "active" : ""}" onclick="armTrip()" ${simRunning ? "disabled" : ""}>${simRunning ? "Trip running…" : (pendingMode === "trip" ? "Tap a zone…" : "Run trip")}</button>
+      <button class="alt ${follow ? "active" : ""}" onclick="toggleFollow()">Follow ${follow ? "on" : "off"}</button>
+      <button class="alt" onclick="enableAlerts()" ${alertsOn ? "disabled" : ""}>${alertsOn ? "Alerts on ✓" : "Enable Alerts"}</button>
+      <div class="hint">Run trip: tap the zone you want, and it travels from your location into that zone and back, firing a real enter and exit.</div>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary>Road routing (optional)</summary>
+        <div style="margin-top:10px">
+          <input id="routeKeyInput" type="password" value="${esc(routeKey)}" placeholder="OpenRouteService API key"/>
+          <button onclick="saveRouteKey()">Save key</button>
+          <div class="hint">Get a free key at openrouteservice.org, paste it here, and Run trip follows real driving roads. Without a key it draws a straight line.</div>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <b>Entries &amp; Exits</b>
+      <button class="alt" onclick="reloadData()">Refresh</button>
+      ${crossings.length ? `<button class="danger" onclick="clearHistory()">Clear history</button>` : ""}
+      ${crossings.length
+        ? crossings.slice(0, 40).map(f => {
+            const k = f.type === "ENTER" ? "enter" : "exit";
+            const t = fmtTime(f.created_at);
+            return `<div class="feed-item ${k}">
+                <span class="tag ${k}">${f.type === "ENTER" ? "⮕ ENTER" : "⬅ EXIT"}</span> ${esc(f.text)}<br>
+                <small>${esc(f.device)}${t ? " · " + t : ""}</small></div>`;
+          }).join("")
+        : `<div class="hint">Nothing yet. Add a geofence, turn on Simulate, then click inside and outside it.</div>`}
+    </div>
+
+    <div class="card"><b>Places (${places.length})</b>${placeRows}</div>
+    <div class="card"><b>Geofences (${geofences.length})</b>${fenceRows}</div>
+
+    <div class="card">
+      <b>This device</b>
+      <div style="font-family:var(--mono);font-size:13px;">${esc(device)}</div>
+      <button class="alt" onclick="reloadData()">Refresh</button>
+    </div>
+  `;
+
+  if (lastStatus) {
+    const el = document.getElementById("status");
+    el.textContent = lastStatus.msg;
+    el.className = lastStatus.err ? "err" : "ok";
+  }
+
+  window.armMode = armMode;
+  window.startTracking = startTracking;
+  window.stopTracking = stopTracking;
+  window.toggleFollow = toggleFollow;
+  window.runTrip = runTrip;
+  window.armTrip = armTrip;
+  window.saveRouteKey = saveRouteKey;
+  window.searchPlace = searchPlace;
+  window.pickSearch = pickSearch;
+  window.reloadData = refreshData;
+  window.clearHistory = clearHistory;
+  window.saveDeviceName = saveDeviceName;
+  window.deletePlace = deletePlace;
+  window.renamePlace = renamePlace;
+  window.deleteGeofence = deleteGeofence;
+  window.editGeofence = editGeofence;
+  window.openGeofencePage = openGeofencePage;
+  window.dismissOpen = dismissOpen;
+  window.openModalPage = openModalPage;
+  window.dismissModal = dismissModal;
+  window.enableAlerts = enableAlerts;
+}
+
+/* ========================= BOOT ========================= */
+// Any first interaction unlocks audio so spoken phrases can play.
+// Any first interaction unlocks audio so beeps and spoken phrases can play.
+window.addEventListener("pointerdown", () => { unlockAudio(); primeSpeech(); }, { once: true });
+
+await load();
+subscribeRealtime();
+render();
+draw();
+
+</script>
+
+</body>
+</html>
